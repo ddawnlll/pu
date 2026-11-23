@@ -4,23 +4,23 @@ Current milestone: **M1 — Skeleton and driver**
 
 ## M1 Checklist
 
-- [ ] `go.mod` (`go 1.27`, `github.com/ddawnlll/pu`, allowed dependencies only)
-- [ ] `internal/catalog`: load `models.toml` (driver, endpoint, auth, model id, context_window, prices, reasoning_param) + local cost calculation
-- [ ] `internal/provider`: typed `Item` / `ContentPart` union (spec §07-B: Text, Image, ToolCall, ToolResult, Reasoning; Video, Audio, FileRef declared unused)
-- [ ] `internal/provider`: streaming SSE client for `openai-chat-compat` (tool calls, reasoning deltas, usage with cached tokens, `User-Agent: pu/<version>`)
-- [ ] `internal/store`: append-only `.pu/sessions/<id>/events.jsonl` with safe truncated last-line recovery
-- [ ] `internal/exec`: allowlist env scrubbing (`ScrubEnv`) for `pu doctor` self-test and M4 reuse
-- [ ] `cmd/pu/main.go`: subcommands `run`, `diff` (stub), `undo` (stub), `doctor` (Go version, `models.toml` validity, masked API key, `rg` present, env-scrub self-test)
+- [x] `go.mod` (`go 1.27`, `github.com/ddawnlll/pu`, allowed dependencies only)
+- [x] `internal/catalog`: load `models.toml` (driver, endpoint, auth, model id, context_window, prices, reasoning_param) + local cost calculation
+- [x] `internal/provider`: typed `Item` / `ContentPart` union (spec §07-B: Text, Image, ToolCall, ToolResult, Reasoning; Video, Audio, FileRef declared unused)
+- [x] `internal/provider`: streaming SSE client for `openai-chat-compat` (tool calls, reasoning deltas, usage with cached tokens, `User-Agent: pu/<version>`)
+- [x] `internal/store`: append-only `.pu/sessions/<id>/events.jsonl` with safe truncated last-line recovery
+- [x] `internal/exec`: allowlist env scrubbing (`ScrubEnv`) for `pu doctor` self-test and M4 reuse
+- [x] `cmd/pu/main.go`: subcommands `run`, `diff` (stub), `undo` (stub), `doctor` (Go version, `models.toml` validity, masked API key, `rg` present, env-scrub self-test)
 
 ### M1 Done-when gates
 
-- [ ] Tests cover UTF-8 split across SSE chunks
-- [ ] Tests cover tool-call argument deltas split across chunks
-- [ ] Tests cover usage parsing (including cached tokens)
-- [ ] Tests cover truncated JSONL recovery
-- [ ] `go vet ./...` and `go test ./...` pass
-- [ ] Release build succeeds: `CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o pu ./cmd/pu`
-- [ ] Opt-in smoke test (`OPENCODE_API_KEY`) implemented and skips cleanly when unset (passes when set)
+- [x] Tests cover UTF-8 split across SSE chunks (`TestStreamUTF8SplitAcrossChunks`)
+- [x] Tests cover tool-call argument deltas split across chunks (`TestStreamToolCallArgsSplitAcrossChunks`)
+- [x] Tests cover usage parsing (including cached tokens) (`TestStreamUsageAndCachedTokens`)
+- [x] Tests cover truncated JSONL recovery (`TestTruncatedLastLineRecovery`)
+- [x] `go vet ./...` and `go test ./...` pass
+- [x] Release build succeeds: `CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o pu ./cmd/pu` (2.2 MiB static binary)
+- [x] Opt-in smoke test (`TestSmokeOpenCodeGo`) implemented and skips cleanly when `OPENCODE_API_KEY` is unset (ready to pass when set)
 
 ## Decisions
 
