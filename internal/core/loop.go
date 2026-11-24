@@ -13,12 +13,15 @@ import (
 
 	"github.com/ddawnlll/pu/internal/catalog"
 	"github.com/ddawnlll/pu/internal/edit"
+	"github.com/ddawnlll/pu/internal/plan"
 	"github.com/ddawnlll/pu/internal/provider"
 	"github.com/ddawnlll/pu/internal/store"
 )
 
 //go:embed system.txt
 var SystemPrompt string
+
+const maxOpenStepContinuations = 2
 
 // Streamer is the minimal provider interface needed by the core loop.
 type Streamer interface {
@@ -38,33 +41,37 @@ const (
 
 // Config configures one headless agent run.
 type Config struct {
-	RepoRoot      string
-	SessionID     string
-	Model         catalog.Model
-	MaxCostUSD    float64
-	MaxTurns      int
-	Timeout       time.Duration
-	Journal       *store.Journal
-	OnStreamEvent func(provider.StreamEvent)
+	RepoRoot       string
+	SessionID      string
+	Model          catalog.Model
+	MaxCostUSD     float64
+	MaxTurns       int
+	Timeout        time.Duration
+	UntrustedRepo  bool
+	TrustUntrusted bool
+	Journal        *store.Journal
+	OnStreamEvent  func(provider.StreamEvent)
 }
 
 // Report is the machine-readable summary emitted at the end of a run.
 type Report struct {
-	Status          Status         `json:"status"`
-	SessionID       string         `json:"session_id"`
-	Model           string         `json:"model"`
-	Turns           int            `json:"turns"`
-	Tokens          provider.Usage `json:"tokens"`
-	NotionalCostUSD float64        `json:"notional_cost_usd"`
-	WallTimeMS      int64          `json:"wall_time_ms"`
-	FilesChanged    []string       `json:"files_changed,omitempty"`
-	FinalText       string         `json:"final_text,omitempty"`
-	Reason          string         `json:"reason,omitempty"`
+	Status          Status          `json:"status"`
+	SessionID       string          `json:"session_id"`
+	Model           string          `json:"model"`
+	Turns           int             `json:"turns"`
+	Tokens          provider.Usage  `json:"tokens"`
+	NotionalCostUSD float64         `json:"notional_cost_usd"`
+	WallTimeMS      int64           `json:"wall_time_ms"`
+	FilesChanged    []string        `json:"files_changed,omitempty"`
+	Evidence        []plan.Evidence `json:"evidence,omitempty"`
+	FinalText       string          `json:"final_text,omitempty"`
+	Reason          string          `json:"reason,omitempty"`
 }
 
 // Run executes the single-writer agent loop with a 4-layer KV-invariant prefix,
-// parallel independent tool execution via errgroup, 64 KiB output spill, and
-// strict budget enforcement.
+// parallel independent tool execution via errgroup, 64 KiB output spill,
+// external-content exec gate, 2-stage KV-friendly context compaction,
+// revision-locked evidence verification, and strict budget enforcement.
 func Run(ctx context.Context, cfg Config, streamer Streamer, userPrompt string) (*Report, error) {
 	startTime := time.Now()
 
@@ -119,6 +126,7 @@ func Run(ctx context.Context, cfg Config, streamer Streamer, userPrompt string) 
 			Parts: []provider.ContentPart{provider.TextPart{Text: projectRules}},
 		})
 	}
+	prefixCount := len(prefixItems)
 
 	// Turn-0 fingerprint goes into the first user turn (Layer 4), never system prompt.
 	fingerprint := BuildTurn0Fingerprint(runCtx, cfg.RepoRoot)
@@ -133,19 +141,28 @@ func Run(ctx context.Context, cfg Config, streamer Streamer, userPrompt string) 
 
 	tracker := edit.NewTracker(cfg.RepoRoot)
 	checkpointer := edit.NewCheckpointer(cfg.RepoRoot, cfg.SessionID)
-	var patchMu sync.Mutex
+	planMgr := plan.NewManager(cfg.RepoRoot)
+	toolMeta := make(map[string]toolResultMeta)
+	var mutMu sync.Mutex // serializes state-mutating tools (patch, exec, plan)
+
+	untrustedTainted := cfg.UntrustedRepo
 
 	logEvent("session_start", map[string]any{
-		"session_id": cfg.SessionID,
-		"model":      cfg.Model.ID,
-		"repo_root":  cfg.RepoRoot,
+		"session_id":     cfg.SessionID,
+		"model":          cfg.Model.ID,
+		"repo_root":      cfg.RepoRoot,
+		"untrusted_repo": cfg.UntrustedRepo,
 	})
 
 	var totalUsage provider.Usage
+	var lastInputTokens int
 	var totalCost float64
 	turns := 0
+	continuations := 0
 
 	finish := func(status Status, finalText, reason string) *Report {
+		planMgr.SetStatus(string(status))
+		snap := planMgr.Snapshot()
 		rep := &Report{
 			Status:          status,
 			SessionID:       cfg.SessionID,
@@ -155,6 +172,7 @@ func Run(ctx context.Context, cfg Config, streamer Streamer, userPrompt string) 
 			NotionalCostUSD: totalCost,
 			WallTimeMS:      time.Since(startTime).Milliseconds(),
 			FilesChanged:    checkpointer.ChangedFiles(),
+			Evidence:        snap.Evidence,
 			FinalText:       finalText,
 			Reason:          reason,
 		}
@@ -181,6 +199,23 @@ func Run(ctx context.Context, cfg Config, streamer Streamer, userPrompt string) 
 			return finish(StatusBudgetExhausted, "", fmt.Sprintf("max notional cost ($%.4f) reached", cfg.MaxCostUSD)), nil
 		}
 
+		// 2-stage KV-friendly context ceiling check (only mutates history at >=75% or >=85%).
+		if turns > 0 && cfg.Model.ContextWindow > 0 {
+			var stage int
+			history, stage = compactHistory(
+				history, prefixCount, cfg.Model.ContextWindow, lastInputTokens,
+				toolMeta, tracker, planMgr, checkpointer, userPrompt,
+			)
+			if stage > 0 {
+				logEvent("context_compaction", map[string]any{
+					"turn":          turns,
+					"stage":         stage,
+					"history_items": len(history),
+				})
+				lastInputTokens = 0
+			}
+		}
+
 		turns++
 		req := provider.Request{
 			Model:           cfg.Model.ID,
@@ -203,6 +238,7 @@ func Run(ctx context.Context, cfg Config, streamer Streamer, userPrompt string) 
 			return finish(StatusFailed, "", err.Error()), err
 		}
 
+		lastInputTokens = resp.Usage.InputTokens
 		totalUsage.InputTokens += resp.Usage.InputTokens
 		totalUsage.CachedInputTokens += resp.Usage.CachedInputTokens
 		totalUsage.OutputTokens += resp.Usage.OutputTokens
@@ -241,25 +277,58 @@ func Run(ctx context.Context, cfg Config, streamer Streamer, userPrompt string) 
 		history = append(history, resp.Item)
 
 		if len(toolCalls) == 0 {
-			return finish(StatusCompleted, strings.TrimSpace(textBuf.String()), ""), nil
+			finalText := strings.TrimSpace(textBuf.String())
+			if planMgr.IsBlocked() {
+				return finish(StatusBlocked, finalText, "plan marked blocked"), nil
+			}
+			if openSteps := planMgr.OpenSteps(); len(openSteps) > 0 {
+				if continuations < maxOpenStepContinuations {
+					continuations++
+					names := make([]string, len(openSteps))
+					for i, s := range openSteps {
+						names[i] = fmt.Sprintf("%s (%s, status=%s)", s.ID, s.Title, s.Status)
+					}
+					contMsg := fmt.Sprintf(
+						"Open plan steps remain without current passing evidence: %s. Complete and verify them on the current file revision, or mark the plan blocked if you cannot proceed.",
+						strings.Join(names, "; "),
+					)
+					logEvent("open_step_continuation", map[string]any{
+						"turn":         turns,
+						"continuation": continuations,
+						"open_steps":   names,
+					})
+					history = append(history, provider.Item{
+						Role:  provider.RoleUser,
+						Parts: []provider.ContentPart{provider.TextPart{Text: contMsg}},
+					})
+					continue
+				}
+				return finish(StatusFailed, finalText, "open plan steps remain without current evidence after continuations"), nil
+			}
+			return finish(StatusCompleted, finalText, ""), nil
 		}
 
-		// Execute independent tool calls in parallel via errgroup, preserving order.
+		// Execute independent read/search calls in parallel via errgroup; serialize mutating tools.
+		outcomes := make([]toolExecOutcome, len(toolCalls))
 		results := make([]provider.ToolResultPart, len(toolCalls))
 		eg, egCtx := errgroup.WithContext(runCtx)
+		taintedSnapshot := untrustedTainted
+
 		for i, tc := range toolCalls {
 			i, tc := i, tc
 			eg.Go(func() error {
-				var out string
-				var isErr bool
-				if tc.Name == "patch" {
-					patchMu.Lock()
-					out, isErr = executeToolCall(egCtx, cfg.RepoRoot, tracker, checkpointer, tc)
-					patchMu.Unlock()
+				var oc toolExecOutcome
+				if tc.Name == "patch" || tc.Name == "exec" || tc.Name == "plan" {
+					mutMu.Lock()
+					oc = executeToolCall(egCtx, cfg.RepoRoot, tracker, checkpointer, planMgr, taintedSnapshot, cfg.TrustUntrusted, tc)
+					mutMu.Unlock()
 				} else {
-					out, isErr = executeToolCall(egCtx, cfg.RepoRoot, tracker, checkpointer, tc)
+					oc = executeToolCall(egCtx, cfg.RepoRoot, tracker, checkpointer, planMgr, taintedSnapshot, cfg.TrustUntrusted, tc)
 				}
-				spilledContent, spilledPath, sErr := SpillOutput(cfg.RepoRoot, cfg.SessionID, tc.ID, out)
+				outcomes[i] = oc
+
+				spilledContent, spilledPath, sErr := SpillOutput(cfg.RepoRoot, cfg.SessionID, tc.ID, oc.output)
+				isErr := oc.isError
 				if sErr != nil {
 					spilledContent = fmt.Sprintf("error: spill output failed: %v", sErr)
 					isErr = true
@@ -276,14 +345,29 @@ func Run(ctx context.Context, cfg Config, streamer Streamer, userPrompt string) 
 					"name":         tc.Name,
 					"is_error":     isErr,
 					"spilled_path": spilledPath,
-					"bytes":        len(out),
+					"bytes":        len(oc.output),
+					"raw_output":   oc.output,
 				})
 				return nil
 			})
 		}
 		_ = eg.Wait()
 
-		// Return all tool results from this turn in one tool-result Item.
+		blockedByGate := false
+		for i, oc := range outcomes {
+			toolMeta[toolCalls[i].ID] = oc.meta
+			if oc.readOutside {
+				untrustedTainted = true
+			}
+			if oc.blockedByGate {
+				blockedByGate = true
+			}
+		}
+
+		if blockedByGate {
+			return finish(StatusBlocked, "", "exec blocked: untrusted external content in context (pass --trust-untrusted to override)"), nil
+		}
+
 		resultParts := make([]provider.ContentPart, len(results))
 		for i := range results {
 			resultParts[i] = results[i]

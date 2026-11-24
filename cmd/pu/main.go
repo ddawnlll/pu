@@ -8,7 +8,9 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 
 	"github.com/ddawnlll/pu/internal/catalog"
 	"github.com/ddawnlll/pu/internal/core"
@@ -70,6 +72,8 @@ func runAgent(args []string, stdout, stderr io.Writer) int {
 	maxCost := fs.Float64("max-cost-usd", 0, "maximum notional list-price cost in USD")
 	maxTurns := fs.Int("max-turns", 0, "maximum agent turns")
 	timeout := fs.Duration("timeout", 0, "overall run timeout")
+	untrustedRepo := fs.Bool("untrusted-repo", false, "mark repository content as untrusted (blocks exec unless --trust-untrusted)")
+	trustUntrusted := fs.Bool("trust-untrusted", false, "allow exec after untrusted content enters context")
 
 	if err := fs.Parse(args); err != nil {
 		return 2
@@ -132,12 +136,17 @@ func runAgent(args []string, stdout, stderr io.Writer) int {
 		UserAgent: "pu/" + version,
 	}
 
-	report, runErr := core.Run(context.Background(), core.Config{
-		RepoRoot:   cwd,
-		Model:      m,
-		MaxCostUSD: *maxCost,
-		MaxTurns:   *maxTurns,
-		Timeout:    *timeout,
+	sigCtx, stopSig := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stopSig()
+
+	report, runErr := core.Run(sigCtx, core.Config{
+		RepoRoot:       cwd,
+		Model:          m,
+		MaxCostUSD:     *maxCost,
+		MaxTurns:       *maxTurns,
+		Timeout:        *timeout,
+		UntrustedRepo:  *untrustedRepo,
+		TrustUntrusted: *trustUntrusted,
 	}, client, prompt)
 
 	if report != nil {

@@ -8,8 +8,11 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/ddawnlll/pu/internal/edit"
+	puexec "github.com/ddawnlll/pu/internal/exec"
+	"github.com/ddawnlll/pu/internal/plan"
 	"github.com/ddawnlll/pu/internal/provider"
 	"github.com/ddawnlll/pu/internal/search"
 )
@@ -24,9 +27,19 @@ const (
 // byte-identically on every turn to keep the KV prefix invariant.
 var coreToolDefs = []provider.ToolDef{
 	{
+		Name:        "exec",
+		Description: "Run a shell command in the repository (non-interactive pipe, scrubbed env, 64 KiB output cap) and record verification evidence.",
+		Parameters:  json.RawMessage(`{"type":"object","properties":{"command":{"description":"Shell command to execute via /bin/sh -c.","type":"string"},"files":{"description":"Optional repo-relative files covered by this check.","items":{"type":"string"},"type":"array"},"kind":{"description":"Optional check kind: build, lint, targeted_test, full_test.","type":"string"},"step":{"description":"Optional plan step ID backed by this check (e.g. S1).","type":"string"},"timeout_seconds":{"description":"Optional command timeout in seconds (default 60).","type":"integer"}},"required":["command"]}`),
+	},
+	{
 		Name:        "patch",
 		Description: "Edit, create, or delete a repository file. Modes: hashline (default, strict 5-letter anchors), search_replace (exactly 1 match), full_rewrite, create, delete.",
 		Parameters:  json.RawMessage(`{"type":"object","properties":{"content":{"description":"Full file content for full_rewrite or create.","type":"string"},"expected_sha256":{"description":"Optional expected file sha256 (prefix >=8 hex chars or full) for revision lock.","type":"string"},"mode":{"description":"Patch mode: hashline (default), search_replace, full_rewrite, create, delete.","enum":["hashline","search_replace","full_rewrite","create","delete"],"type":"string"},"new_text":{"description":"Replacement text for search_replace.","type":"string"},"old_text":{"description":"Exact target text for search_replace (must match once).","type":"string"},"ops":{"description":"Line-anchored edit operations for hashline mode.","items":{"properties":{"end_anchor":{"type":"string"},"end_line":{"type":"integer"},"insert_after":{"type":"boolean"},"new_text":{"type":"string"},"start_anchor":{"type":"string"},"start_line":{"type":"integer"}},"required":["start_line","start_anchor","new_text"],"type":"object"},"type":"array"},"path":{"description":"Repo-relative file path.","type":"string"}},"required":["path"]}`),
+	},
+	{
+		Name:        "plan",
+		Description: "Create or update the short task plan mirrored to .pu/plan.json.",
+		Parameters:  json.RawMessage(`{"type":"object","properties":{"goal":{"description":"Short task goal.","type":"string"},"status":{"description":"Plan status: in_progress, completed, blocked.","enum":["in_progress","completed","blocked"],"type":"string"},"steps":{"description":"Ordered plan steps.","items":{"properties":{"depends_on":{"items":{"type":"string"},"type":"array"},"files":{"items":{"type":"string"},"type":"array"},"id":{"type":"string"},"status":{"enum":["pending","in_progress","done","blocked"],"type":"string"},"title":{"type":"string"}},"required":["id","title","status"],"type":"object"},"type":"array"}},"required":["steps"]}`),
 	},
 	{
 		Name:        "read",
@@ -62,34 +75,146 @@ type searchArgs struct {
 	MaxResults int    `json:"max_results"`
 }
 
-func executeToolCall(ctx context.Context, repoRoot string, tracker *edit.Tracker, cp *edit.Checkpointer, tc provider.ToolCallPart) (string, bool) {
+type execArgs struct {
+	Command        string   `json:"command"`
+	Step           string   `json:"step"`
+	Kind           string   `json:"kind"`
+	Files          []string `json:"files"`
+	TimeoutSeconds int      `json:"timeout_seconds"`
+}
+
+type planArgs struct {
+	Goal   string      `json:"goal"`
+	Status string      `json:"status"`
+	Steps  []plan.Step `json:"steps"`
+}
+
+type toolExecOutcome struct {
+	output        string
+	isError       bool
+	meta          toolResultMeta
+	readOutside   bool
+	blockedByGate bool
+}
+
+func executeToolCall(
+	ctx context.Context,
+	repoRoot string,
+	tracker *edit.Tracker,
+	cp *edit.Checkpointer,
+	planMgr *plan.Manager,
+	untrustedTainted bool,
+	trustUntrusted bool,
+	tc provider.ToolCallPart,
+) toolExecOutcome {
 	switch tc.Name {
+	case "exec":
+		var args execArgs
+		if err := json.Unmarshal([]byte(tc.Arguments), &args); err != nil {
+			return toolExecOutcome{output: fmt.Sprintf("error: invalid exec arguments: %v", err), isError: true}
+		}
+		if untrustedTainted && !trustUntrusted {
+			return toolExecOutcome{
+				output:        "blocked: untrusted external content entered context; exec is blocked in headless mode unless --trust-untrusted is set",
+				isError:       true,
+				blockedByGate: true,
+			}
+		}
+		timeout := time.Duration(args.TimeoutSeconds) * time.Second
+		res, err := puexec.Run(ctx, puexec.RunOptions{
+			Command: args.Command,
+			Dir:     repoRoot,
+			Timeout: timeout,
+		})
+		if err != nil {
+			return toolExecOutcome{output: fmt.Sprintf("error: %v", err), isError: true}
+		}
+
+		// Post-exec stat/hash check on all tracked files; bump revision & stale earlier evidence.
+		changedRecs := tracker.CheckExternalMutations()
+		if len(changedRecs) > 0 {
+			changedPaths := make([]string, len(changedRecs))
+			for i, r := range changedRecs {
+				changedPaths[i] = r.Path
+			}
+			planMgr.InvalidateForFiles(changedPaths)
+		}
+
+		rev := tracker.WorkspaceRevision()
+		ev := planMgr.RecordEvidence(args.Command, res.ExitCode, rev, args.Step, args.Kind, args.Files, "")
+
+		out := res.Format()
+		if len(changedRecs) > 0 {
+			paths := make([]string, len(changedRecs))
+			for i, r := range changedRecs {
+				paths[i] = fmt.Sprintf("%s@rev%d", r.Path, r.Revision)
+			}
+			out += fmt.Sprintf("[exec modified tracked files: %s; prior evidence marked stale]\n", strings.Join(paths, ", "))
+		}
+		out += fmt.Sprintf("[evidence: %s %s rev%d]\n", ev.ID, ev.Validity, ev.RevisionNum)
+
+		return toolExecOutcome{
+			output:  out,
+			isError: res.ExitCode != 0,
+			meta: toolResultMeta{
+				toolName:   "exec",
+				cmd:        args.Command,
+				evidenceID: ev.ID,
+			},
+		}
+
 	case "patch":
 		var req edit.PatchRequest
 		if err := json.Unmarshal([]byte(tc.Arguments), &req); err != nil {
-			return fmt.Sprintf("error: invalid patch arguments: %v", err), true
+			return toolExecOutcome{output: fmt.Sprintf("error: invalid patch arguments: %v", err), isError: true}
 		}
 		res, err := tracker.Patch(cp, req)
 		if err != nil {
-			return fmt.Sprintf("error: %v", err), true
+			return toolExecOutcome{output: fmt.Sprintf("error: %v", err), isError: true}
 		}
-		return res.Format(), false
+		planMgr.InvalidateForFiles([]string{res.Path})
+		return toolExecOutcome{
+			output: res.Format(),
+			meta:   toolResultMeta{toolName: "patch", path: res.Path},
+		}
+
+	case "plan":
+		var args planArgs
+		if err := json.Unmarshal([]byte(tc.Arguments), &args); err != nil {
+			return toolExecOutcome{output: fmt.Sprintf("error: invalid plan arguments: %v", err), isError: true}
+		}
+		if err := planMgr.Update(args.Goal, args.Steps, args.Status); err != nil {
+			return toolExecOutcome{output: fmt.Sprintf("error: update plan: %v", err), isError: true}
+		}
+		return toolExecOutcome{
+			output: planMgr.FormatSummary(),
+			meta:   toolResultMeta{toolName: "plan"},
+		}
 
 	case "read":
 		var args readArgs
 		if err := json.Unmarshal([]byte(tc.Arguments), &args); err != nil {
-			return fmt.Sprintf("error: invalid read arguments: %v", err), true
+			return toolExecOutcome{output: fmt.Sprintf("error: invalid read arguments: %v", err), isError: true}
 		}
+		outside := isOutsideRepo(repoRoot, args.Path)
 		res, err := tracker.Read(args.Path, args.StartLine, args.EndLine)
 		if err != nil {
-			return fmt.Sprintf("error: %v", err), true
+			return toolExecOutcome{output: fmt.Sprintf("error: %v", err), isError: true}
 		}
-		return res.Format(), false
+		return toolExecOutcome{
+			output:      res.Format(),
+			readOutside: outside,
+			meta: toolResultMeta{
+				toolName: "read",
+				path:     res.Path,
+				readRev:  res.Revision,
+			},
+		}
 
 	case "search":
 		var args searchArgs
 		if err := json.Unmarshal([]byte(tc.Arguments), &args); err != nil {
-			return fmt.Sprintf("error: invalid search arguments: %v", err), true
+			return toolExecOutcome{output: fmt.Sprintf("error: invalid search arguments: %v", err), isError: true}
 		}
 		res, err := search.Search(ctx, search.Options{
 			Root:       repoRoot,
@@ -100,13 +225,33 @@ func executeToolCall(ctx context.Context, repoRoot string, tracker *edit.Tracker
 			MaxResults: args.MaxResults,
 		})
 		if err != nil {
-			return fmt.Sprintf("error: %v", err), true
+			return toolExecOutcome{output: fmt.Sprintf("error: %v", err), isError: true}
 		}
-		return res.Format(), false
+		return toolExecOutcome{
+			output: res.Format(),
+			meta:   toolResultMeta{toolName: "search"},
+		}
 
 	default:
-		return fmt.Sprintf("error: unknown tool %q", tc.Name), true
+		return toolExecOutcome{output: fmt.Sprintf("error: unknown tool %q", tc.Name), isError: true}
 	}
+}
+
+func isOutsideRepo(repoRoot, target string) bool {
+	absRoot, err := filepath.Abs(repoRoot)
+	if err != nil {
+		return false
+	}
+	absTarget := target
+	if !filepath.IsAbs(absTarget) {
+		absTarget = filepath.Join(absRoot, target)
+	}
+	absTarget = filepath.Clean(absTarget)
+	rel, err := filepath.Rel(absRoot, absTarget)
+	if err != nil {
+		return true
+	}
+	return rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
 // SpillOutput writes outputs larger than 64 KiB to .pu/sessions/<sessionID>/out/<callID>.txt
@@ -157,7 +302,6 @@ func trimUTF8Prefix(s string, maxBytes int) string {
 	if len(s) <= maxBytes {
 		return s
 	}
-	// Back up to a valid UTF-8 rune boundary.
 	i := maxBytes
 	for i > 0 && (s[i]&0xc0) == 0x80 {
 		i--
