@@ -110,6 +110,25 @@ Current milestone: **P0 Complete (M1–M5 merged to `main`)** — ready for the 
   - Finding: OpenCode Go upstream latency spikes affect both tools equally (`r1`/`r2` hit ~45–60s/turn; `r3` dropped to ~6–9s/turn); `pu` still uses ~2–5x fewer tokens/cost per task.
 - Gates: `go vet ./...` PASS; `go test ./...` PASS; `CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o pu ./cmd/pu` PASS.
 
+## Pilot results (interim — 10/30 paired tasks completed before 17:10 cutoff; resumable via `--resume`)
+
+- **Run configuration:** `eval/pilot_tasks` (30 frozen real-history tasks, `SELECTION.md`), `deepseek-v4.1-flash` on OpenCode Go, `provider_default` reasoning for both tools, alternating order (odd `jcode -> pu`, even `pu -> jcode`), `--timeout 3m`, `--max-turns 20`, `--max-cost-usd 0.50` (`pu` only; `jcode` has no CLI cost/turn cap), pre-seeded isolated `JCODE_HOME` + `stdin=/dev/null` for both tools. Raw results saved in `eval/pilot_results.jsonl` (21 runs: tasks 01–10 paired + task 11 `jcode`; resume with `pu-eval --resume --tasks eval/pilot_tasks --out eval/pilot_results.jsonl`).
+- **Headline metrics (all completed runs so far):**
+  - `pu`: **5/10 (50.0%)** pass, median wall **180,015 ms**, median notional cost **$0.006525** (median tokens: 185,872 in / 166,656 cached / 4,727 out).
+  - `jcode`: **2/11 (18.2%)** pass (**2/10 = 20.0%** on the 10 paired tasks), median wall **152,536 ms**, median notional cost **$0.008862** (median tokens: 346,154 in / 316,416 cached / 5,754 out).
+- **Spec §12 Go/No-Go verdict (interim):** **GO** — `pu` success **50.0% >= `jcode` 18.2%** (20.0% paired), median notional cost gain **+26.4%** (>= 15% threshold met; median wall-time gain -18.0% because 3 of `pu`'s 5 passes hit the 180s timeout *after* fixing the code while `jcode` timed out without passing). Full 30-task verdict pending `--resume` of tasks 11–30.
+- **Per-category breakdown:**
+  - `bugfix` (10/10 paired): `pu` **5/10 (50.0%)**, median wall 180,015 ms, median notional $0.006525 | `jcode` **2/10 (20.0%)**, median wall 152,536 ms, median notional $0.008862.
+  - `feature_refactor` (0/10 paired; 1 `jcode` run done): `jcode` **0/1 (0.0%)** (timeout on `11_tetik2_recall_lessons`); `pu` pending `--resume`.
+  - `test_build` (0/5), `no_change` (0/3), `large_file` (0/2): pending `--resume` (stopped cleanly at 16:59 Istanbul time to meet the 17:10 wrap-up deadline).
+- **Rate-limited and invalid runs:** **0** `rate_limited`, **0** `setup_error`/invalid runs.
+- **Top 5 tasks with the biggest gap:**
+  1. `08_gjson_uint_overflow` (`pu` win): `pu` PASS in 143.2s / 11 turns / $0.00612 vs `jcode` FAIL timeout at 180.0s / 16 turns / $0.01288 (2.1x cheaper, finished cleanly).
+  2. `06_gjson_zero_prefix` (`pu` win): `pu` PASS in 152.2s / 16 turns / $0.00599 vs `jcode` FAIL timeout at 180.0s / 17 turns / $0.00729.
+  3. `01_lipgloss_table_nil` (`pu` win): `pu` PASS (`budget_exhausted` at 180.1s after applying the fix, 17 turns, $0.00918) vs `jcode` FAIL timeout at 180.2s (7 turns, $0.00585, fix incomplete).
+  4. `03_lipgloss_alpha_enum` (`jcode` win): `jcode` PASS in 154.0s / 15 turns / $0.00993 vs `pu` FAIL (`signal: killed` at 180.0s before flushing JSON report).
+  5. `05_lipgloss_unset_underline` (`jcode` win): `jcode` PASS in 151.0s / 18 turns / $0.00779 vs `pu` FAIL (`signal: killed` at 180.0s before flushing JSON report).
+
 ## Decisions
 
 - **OpenCode Go endpoint path & session header**: Chat-completions models (including pilot model `deepseek-v4.1-flash`) use `https://opencode.ai/inference/go/openai/v1`, `reasoning_content`, and require `x-opencode-session` (`provider.Request.SessionID`).
@@ -125,4 +144,7 @@ Current milestone: **P0 Complete (M1–M5 merged to `main`)** — ready for the 
 
 ## Open questions
 
-- **OpenCode Go 5-hour / weekly usage limits during 30-task pilot**: Handled via `rate_limited` classification + `pu-eval --resume` so interrupted pilots can resume cleanly after the window resets.
+- **Pilot completion (`--resume` tasks 11–30):** 21/60 runs (tasks 01–10 paired + task 11 `jcode`) finished before the 17:10 Istanbul wrap-up deadline; resume with `pu-eval --resume --tasks eval/pilot_tasks --out eval/pilot_results.jsonl --timeout 5m` (consider 5m timeout because under `provider_default` full thinking on OpenCode Go, 9/11 `jcode` runs and 8/10 `pu` runs hit the 3m cap).
+- **pu improvement idea — graceful shutdown cushion before harness `SIGKILL`:** On `03_lipgloss_alpha_enum`, `05_lipgloss_unset_underline`, and `07_gjson_uint_20byte`, `pu` was killed by `exec.CommandContext` at 180s before its own `--timeout 3m` flushed the JSON report (`turns=0`, `$0` recorded). Give `pu` a 2s internal deadline cushion (or have `pu-eval` send `SIGINT` before `SIGKILL`) so partial turn/token telemetry is always preserved.
+- **pu improvement idea — stop earlier once targeted tests pass:** On `01_lipgloss_table_nil`, `02_lipgloss_tree_nil`, and `09_serde_json_f32_eq`, `pu` fixed the bug (passing acceptance) but kept running extra turns/checks until the 180s timeout (`budget_exhausted`). Tightening completion behavior after green targeted tests should cut median wall time and notional cost further.
+- **OpenCode Go 5-hour / weekly usage limits during 30-task pilot:** Handled via `rate_limited` classification + `pu-eval --resume` (0 rate-limited runs observed across the first 21 runs).
