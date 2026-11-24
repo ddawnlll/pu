@@ -1,0 +1,6 @@
+id = "11_tetik2_recall_lessons"
+repo = "/home/quant/src/tetik2"
+commit = "ed00d583d3b81f3c6cd5a2ae62297a97527bc21c"
+category = "feature_refactor"
+prompt = "Wire supported paper lesson recall into the bounded trader prompt across internal/runtime/recall.go and internal/runtime/shadow.go so supported lessons are recalled within bounds."
+acceptance = "git checkout e6e18c66 -- internal/runtime/recall_test.go && go test ./internal/runtime/..."

@@ -1,0 +1,6 @@
+id = "13_tetik2_candle_structure"
+repo = "/home/quant/src/tetik2"
+commit = "562ccd6c3b222617ca3274cb4929c1fd3ce8ae64"
+category = "feature_refactor"
+prompt = "Add confirmed candle structure computation to internal/signals/structure.go and expose it in internal/signals/dossier.go."
+acceptance = "git checkout 5aba1dea -- internal/signals/dossier_test.go && go test ./internal/signals/..."

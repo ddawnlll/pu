@@ -1,0 +1,6 @@
+id = "02_lipgloss_tree_nil"
+repo = "/home/quant/src/pilot_repos/lipgloss"
+commit = "4b8c6673522d1d85b575676ce8e2dcd0d4f5e818"
+category = "bugfix"
+prompt = "The lipgloss tree package panics or mishandles nil values passed into tree constructors/children. Fix tree handling of nil values cleanly."
+acceptance = "git checkout 03215bc1 -- tree/tree_test.go && go test ./tree/..."

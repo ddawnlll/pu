@@ -1,0 +1,6 @@
+id = "25_toml_large_float_exp"
+repo = "/home/quant/src/pilot_repos/toml"
+commit = "3d3abc24416aa7391a8c145ac6ddb8fb6b22dade"
+category = "test_build"
+prompt = "Encoding large floats in encode.go fails encode_test.go because they are not formatted in exponent syntax. Fix large float encoding so go test . passes."
+acceptance = "git checkout 10fb0a63 -- encode_test.go && go test ."

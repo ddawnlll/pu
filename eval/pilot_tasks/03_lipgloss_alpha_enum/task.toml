@@ -1,0 +1,6 @@
+id = "03_lipgloss_alpha_enum"
+repo = "/home/quant/src/pilot_repos/lipgloss"
+commit = "3ab3b5f4cf21719e23eb9f91c59261be28fe7eef"
+category = "bugfix"
+prompt = "The alphabet list enumerator in list/enumerator.go produces non-letter characters for large list indices beyond Z. Fix it to produce valid Excel-style alphabetic labels."
+acceptance = "git checkout 2a70d4ee -- list/list_test.go && go test ./list/..."

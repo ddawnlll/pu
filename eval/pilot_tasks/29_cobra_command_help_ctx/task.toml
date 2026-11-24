@@ -1,0 +1,6 @@
+id = "29_cobra_command_help_ctx"
+repo = "/home/quant/src/pilot_repos/cobra"
+commit = "f98cf4216d3cb5235e6e0cd00ee00959deb1dc65"
+category = "large_file"
+prompt = "In command.go (>2000 lines), SetHelpFunc does not flow the command's context into the help command execution. Fix command.go so context flows to the command in SetHelpFunc."
+acceptance = "git checkout 1995054b -- command_test.go && go test -run TestHelpFunc ."

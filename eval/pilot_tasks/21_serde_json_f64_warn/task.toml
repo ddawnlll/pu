@@ -1,0 +1,6 @@
+id = "21_serde_json_f64_warn"
+repo = "/home/quant/src/pilot_repos/serde_json"
+commit = "a3e9758ffc88247ab82182cb2505867768a702e3"
+category = "test_build"
+prompt = "Building serde_json tests with RUSTFLAGS='-D warnings' fails due to deprecated f64 constants warnings. Resolve the deprecated f64 constants warnings so tests build cleanly with -D warnings."
+acceptance = "CARGO_TARGET_DIR=/home/quant/src/pilot_repos/.cargo-target RUSTFLAGS='-D warnings' cargo test --no-run"

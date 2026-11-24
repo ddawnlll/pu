@@ -1,0 +1,6 @@
+id = "19_toml_max_depth"
+repo = "/home/quant/src/pilot_repos/toml"
+commit = "eb8b9987e23e6f5aff69fb1a1d0b113840c0964e"
+category = "feature_refactor"
+prompt = "Expand Decoder.MaxTableNesting() to cover arrays as well and rename it to MaxDepth() across decode.go and parse.go."
+acceptance = "git checkout 6a671b23 -- decode_test.go && go test -run TestMaxDepth ."

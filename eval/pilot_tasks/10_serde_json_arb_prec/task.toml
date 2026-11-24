@@ -1,0 +1,6 @@
+id = "10_serde_json_arb_prec"
+repo = "/home/quant/src/pilot_repos/serde_json"
+commit = "20572a6d066958542d79cdd6cf1a7cd9f0c8e1f8"
+category = "bugfix"
+prompt = "Deserializing serde_json::Number with the arbitrary_precision feature does not always preserve arbitrary precision. Fix Number deserialization to preserve arbitrary precision."
+acceptance = "CARGO_TARGET_DIR=/home/quant/src/pilot_repos/.cargo-target sh -c 'git checkout 4db7fd64 -- tests/test.rs && cargo test --features arbitrary_precision --test test'"

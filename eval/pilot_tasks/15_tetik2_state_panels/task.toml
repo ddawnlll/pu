@@ -1,0 +1,6 @@
+id = "15_tetik2_state_panels"
+repo = "/home/quant/src/tetik2"
+commit = "e6e18c66e6c20c04483e4d56f696bdfff9586da9"
+category = "feature_refactor"
+prompt = "Publish read-only state and system panels with explicit unknowns across internal/operator/console.go, console_ledger.go, and console_state.go."
+acceptance = "git checkout e7a4b27a -- internal/operator/console_ledger_test.go && go test ./internal/operator/..."

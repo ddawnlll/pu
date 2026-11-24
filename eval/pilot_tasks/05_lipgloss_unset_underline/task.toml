@@ -1,0 +1,6 @@
+id = "05_lipgloss_unset_underline"
+repo = "/home/quant/src/pilot_repos/lipgloss"
+commit = "4da0bdd631e583c95511237f5f61dc95ff12ab59"
+category = "bugfix"
+prompt = "UnsetUnderline in unset.go does not clear the underline style rule properly. Fix UnsetUnderline so underline styling is fully unset."
+acceptance = "git checkout 0f0a9848 -- style_test.go && go test ."

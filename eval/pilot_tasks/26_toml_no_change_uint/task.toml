@@ -1,0 +1,6 @@
+id = "26_toml_no_change_uint"
+repo = "/home/quant/src/pilot_repos/toml"
+commit = "d733fc535e4a9f3c454e421a87b90ade5d49bf31"
+category = "no_change"
+prompt = "A user reports that decoding a negative integer into a Go uint or uint64 silently wraps around instead of returning an error. Investigate decode.go and decode_test.go; only make changes if a real bug exists."
+acceptance = "go test . && git diff --quiet"
