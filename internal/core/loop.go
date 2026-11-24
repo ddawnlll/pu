@@ -39,6 +39,33 @@ const (
 	StatusFailed          Status = "failed"
 )
 
+// Ablation holds optional hidden toggles for M5 ablation experiments.
+type Ablation struct {
+	NoTurn0        bool
+	NoHashline     bool
+	NoPinnedPrefix bool
+	NoStaged       bool
+}
+
+// ParseAblate parses a comma-separated list of ablation flags:
+// turn0, hashline, pinned-prefix, staged.
+func ParseAblate(raw string) Ablation {
+	var a Ablation
+	for _, tok := range strings.Split(raw, ",") {
+		switch strings.TrimSpace(strings.ToLower(tok)) {
+		case "turn0":
+			a.NoTurn0 = true
+		case "hashline":
+			a.NoHashline = true
+		case "pinned-prefix":
+			a.NoPinnedPrefix = true
+		case "staged":
+			a.NoStaged = true
+		}
+	}
+	return a
+}
+
 // Config configures one headless agent run.
 type Config struct {
 	RepoRoot       string
@@ -49,6 +76,7 @@ type Config struct {
 	Timeout        time.Duration
 	UntrustedRepo  bool
 	TrustUntrusted bool
+	Ablate         Ablation
 	Journal        *store.Journal
 	OnStreamEvent  func(provider.StreamEvent)
 }
@@ -111,9 +139,13 @@ func Run(ctx context.Context, cfg Config, streamer Streamer, userPrompt string) 
 	}
 
 	// Build immutable Layers 1, 2, 3 once at session start.
+	sysText := strings.TrimSpace(SystemPrompt)
+	if cfg.Ablate.NoStaged {
+		sysText = strings.ReplaceAll(sysText, "After a change, run the fastest check that covers it: build or lint first, then the targeted test. Run the full suite only when a shared interface changed or before finishing a multi-file change.\n", "")
+	}
 	layer1 := provider.Item{
 		Role:  provider.RoleSystem,
-		Parts: []provider.ContentPart{provider.TextPart{Text: strings.TrimSpace(SystemPrompt)}},
+		Parts: []provider.ContentPart{provider.TextPart{Text: sysText}},
 	}
 	layer2Tools := ToolDefs()
 	projectRules := LoadProjectRules(cfg.RepoRoot)
@@ -129,8 +161,11 @@ func Run(ctx context.Context, cfg Config, streamer Streamer, userPrompt string) 
 	prefixCount := len(prefixItems)
 
 	// Turn-0 fingerprint goes into the first user turn (Layer 4), never system prompt.
-	fingerprint := BuildTurn0Fingerprint(runCtx, cfg.RepoRoot)
-	firstUserText := fingerprint + "\n\n" + userPrompt
+	firstUserText := userPrompt
+	if !cfg.Ablate.NoTurn0 {
+		fingerprint := BuildTurn0Fingerprint(runCtx, cfg.RepoRoot)
+		firstUserText = fingerprint + "\n\n" + userPrompt
+	}
 
 	history := make([]provider.Item, 0, 16)
 	history = append(history, prefixItems...)
@@ -217,11 +252,19 @@ func Run(ctx context.Context, cfg Config, streamer Streamer, userPrompt string) 
 		}
 
 		turns++
+		reqItems := history
+		if cfg.Ablate.NoPinnedPrefix {
+			reqItems = append([]provider.Item(nil), history...)
+			reqItems[0] = provider.Item{
+				Role:  provider.RoleSystem,
+				Parts: []provider.ContentPart{provider.TextPart{Text: fmt.Sprintf("%s\n[turn=%d ts=%d]", sysText, turns, time.Now().UnixNano())}},
+			}
+		}
 		req := provider.Request{
 			Model:           cfg.Model.ID,
 			SessionID:       cfg.SessionID,
 			Turn:            turns,
-			Items:           history,
+			Items:           reqItems,
 			Tools:           layer2Tools,
 			ReasoningParam:  cfg.Model.ReasoningParam,
 			ReasoningEffort: cfg.Model.ReasoningEffort,
@@ -320,10 +363,10 @@ func Run(ctx context.Context, cfg Config, streamer Streamer, userPrompt string) 
 				var oc toolExecOutcome
 				if tc.Name == "patch" || tc.Name == "exec" || tc.Name == "plan" {
 					mutMu.Lock()
-					oc = executeToolCall(egCtx, cfg.RepoRoot, tracker, checkpointer, planMgr, taintedSnapshot, cfg.TrustUntrusted, tc)
+					oc = executeToolCall(egCtx, cfg.RepoRoot, tracker, checkpointer, planMgr, taintedSnapshot, cfg.TrustUntrusted, cfg.Ablate.NoHashline, tc)
 					mutMu.Unlock()
 				} else {
-					oc = executeToolCall(egCtx, cfg.RepoRoot, tracker, checkpointer, planMgr, taintedSnapshot, cfg.TrustUntrusted, tc)
+					oc = executeToolCall(egCtx, cfg.RepoRoot, tracker, checkpointer, planMgr, taintedSnapshot, cfg.TrustUntrusted, cfg.Ablate.NoHashline, tc)
 				}
 				outcomes[i] = oc
 

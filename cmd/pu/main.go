@@ -74,6 +74,7 @@ func runAgent(args []string, stdout, stderr io.Writer) int {
 	timeout := fs.Duration("timeout", 0, "overall run timeout")
 	untrustedRepo := fs.Bool("untrusted-repo", false, "mark repository content as untrusted (blocks exec unless --trust-untrusted)")
 	trustUntrusted := fs.Bool("trust-untrusted", false, "allow exec after untrusted content enters context")
+	ablateFlag := fs.String("ablate", "", "") // hidden ablation switch: turn0,hashline,pinned-prefix,staged
 
 	if err := fs.Parse(args); err != nil {
 		return 2
@@ -147,6 +148,7 @@ func runAgent(args []string, stdout, stderr io.Writer) int {
 		Timeout:        *timeout,
 		UntrustedRepo:  *untrustedRepo,
 		TrustUntrusted: *trustUntrusted,
+		Ablate:         core.ParseAblate(*ablateFlag),
 	}, client, prompt)
 
 	if report != nil {

@@ -1,0 +1,6 @@
+id = "03_no_change"
+repo = "../../.."
+commit = "HEAD"
+category = "no_change"
+prompt = "Check whether Add(a, b) in eval/sample_tasks/toyrepo/calc.go has a bug. Run `cd eval/sample_tasks/toyrepo && go test -run TestAdd` and do not modify files if it already passes."
+acceptance = "cd eval/sample_tasks/toyrepo && go test -run TestAdd ./..."
