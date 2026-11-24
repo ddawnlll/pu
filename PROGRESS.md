@@ -98,6 +98,18 @@ Current milestone: **P0 Complete (M1–M5 merged to `main`)** — ready for the 
   - Summary: `pu` **3/3 (100.0%)**, median wall **27,151 ms**, median notional **$0.000788** vs `jcode` **2/3 (66.7%)**, median wall **66,558 ms**, median notional **$0.002532** — Spec §12 Verdict: **GO** (+59.2% wall-time gain, +68.9% notional cost gain).
 - Gates: `go vet ./...` PASS; `go test ./...` PASS; `CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o pu ./cmd/pu` PASS.
 
+### Phase 1 — jcode Timeout Investigation & Template Pre-seed (merged)
+- **Root cause of 120s timeout:** Both `pu` and `jcode` receive the exact same `context.WithTimeout(ctx, cfg.Timeout)` in `eval/runner.go` (`--timeout 2m` = 120,000 ms). `jcode`'s isolated log (`logs/jcode-*.log`) showed `HTTP connection established in 119925ms` on OpenCode Go's endpoint during upstream latency spikes (not a stdin hang or local deadlock).
+- **Harness hardening (`p0/m5-jcode-timeout`):**
+  - Attached explicit `/dev/null` to `cmd.Stdin` for both `runPu` and `runJcode`.
+  - Added `prepareJcodeTemplateHome` / `seedJcodeHome`: creates one pre-seeded template `JCODE_HOME` per `RunAll` (memory disabled, migration stamps, allowlisted static caches `opencode-go_models.json` and `models_dev_pricing.json`, zero session history or memory DBs) and copies it into a fresh temp dir per `jcode` run. Verified `pu` has zero first-run cache/network work (17–31 ms ext-vs-int overhead).
+- **`01_fix_sub` 3x per tool (`deepseek-v4.1-flash`, `provider_default`, `timeout=3m`, alternating):**
+  - `r1`: `jcode` FAIL timeout (5 turns, 180,055 ms, $0.004070) | `pu` PASS (4 turns, 180,085 ms ext / 180,054 ms int, `budget_exhausted` after fix, $0.000937)
+  - `r2`: `pu` PASS (3 turns, 180,064 ms ext / 180,050 ms int, `budget_exhausted` after fix, $0.000648) | `jcode` PASS (9 turns, 95,036 ms, $0.004699)
+  - `r3`: `jcode` PASS (9 turns, 79,880 ms, $0.003089) | `pu` PASS (8 turns, 52,224 ms ext / 52,207 ms int, $0.002025)
+  - Finding: OpenCode Go upstream latency spikes affect both tools equally (`r1`/`r2` hit ~45–60s/turn; `r3` dropped to ~6–9s/turn); `pu` still uses ~2–5x fewer tokens/cost per task.
+- Gates: `go vet ./...` PASS; `go test ./...` PASS; `CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o pu ./cmd/pu` PASS.
+
 ## Decisions
 
 - **OpenCode Go endpoint path & session header**: Chat-completions models (including pilot model `deepseek-v4.1-flash`) use `https://opencode.ai/inference/go/openai/v1`, `reasoning_content`, and require `x-opencode-session` (`provider.Request.SessionID`).

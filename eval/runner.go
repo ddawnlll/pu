@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	osexec "os/exec"
 	"path/filepath"
@@ -84,9 +85,10 @@ type RunConfig struct {
 	MaxCostUSD      float64
 	MaxTurns        int
 	Timeout         time.Duration
-	PuBin           string
-	JcodeBin        string
-	Tools           []string // e.g. ["pu", "jcode"] or ["pu"]
+	PuBin             string
+	JcodeBin          string
+	JcodeTemplateHome string   // optional pre-seeded JCODE_HOME template copied per run
+	Tools             []string // e.g. ["pu", "jcode"] or ["pu"]
 	Ablate          string
 	Resume          bool        // skip (task_id, tool) already completed (non-rate_limited) in ResultsPath
 	Runner          AgentRunner // optional override for tests
@@ -169,6 +171,21 @@ func RunAll(ctx context.Context, cfg RunConfig) ([]Result, error) {
 	}
 	if cfg.Runner == nil {
 		cfg.Runner = defaultAgentRunner
+	}
+
+	// Pre-seed one template JCODE_HOME (config + model/pricing caches + migration markers,
+	// memory disabled, zero session history) and copy it per jcode run to eliminate
+	// first-run cache fetches while keeping every run isolated.
+	if cfg.JcodeTemplateHome == "" {
+		for _, t := range cfg.Tools {
+			if t == "jcode" {
+				if tpl, tErr := prepareJcodeTemplateHome(cfg); tErr == nil {
+					cfg.JcodeTemplateHome = tpl
+					defer os.RemoveAll(tpl)
+				}
+				break
+			}
+		}
 	}
 
 	completedKeys := make(map[string]bool)
@@ -381,6 +398,10 @@ func runPu(ctx context.Context, worktreeDir string, task Task, cfg RunConfig) Ag
 
 	cmd := osexec.CommandContext(ctx, puBin, args...)
 	cmd.Dir = worktreeDir
+	if devNull, nErr := os.Open(os.DevNull); nErr == nil {
+		cmd.Stdin = devNull
+		defer devNull.Close()
+	}
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
@@ -464,16 +485,12 @@ func runJcode(ctx context.Context, worktreeDir string, task Task, cfg RunConfig)
 	}
 	defer os.RemoveAll(isoHome)
 
-	// Write minimal isolated config.toml disabling memory sidecar.
-	// Verified from jcode logs/session journals that jcode opencode-go ignores
-	// openai_reasoning_effort and always sends thinking_enabled=None (provider default).
-	var conf strings.Builder
-	conf.WriteString("[agents]\nmemory_sidecar_enabled = false\n")
 	isProviderDefault := cfg.ReasoningEffort == "" || strings.EqualFold(cfg.ReasoningEffort, "provider_default") || strings.EqualFold(cfg.ReasoningEffort, "default") || strings.EqualFold(cfg.ReasoningEffort, "none")
-	if !isProviderDefault {
-		fmt.Fprintf(&conf, "\n[provider]\nopenai_reasoning_effort = %q\n", cfg.ReasoningEffort)
+	if cfg.JcodeTemplateHome != "" {
+		_ = copyDir(cfg.JcodeTemplateHome, isoHome)
+	} else {
+		_ = seedJcodeHome(isoHome, cfg)
 	}
-	_ = os.WriteFile(filepath.Join(isoHome, "config.toml"), []byte(conf.String()), 0o644)
 
 	args := []string{
 		"run",
@@ -492,6 +509,10 @@ func runJcode(ctx context.Context, worktreeDir string, task Task, cfg RunConfig)
 	cmd := osexec.CommandContext(ctx, jcodeBin, args...)
 	cmd.Dir = worktreeDir
 	cmd.Env = isolatedJcodeEnv(os.Environ(), isoHome)
+	if devNull, nErr := os.Open(os.DevNull); nErr == nil {
+		cmd.Stdin = devNull
+		defer devNull.Close()
+	}
 
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
@@ -703,6 +724,84 @@ func ParseJcodeSessionUsage(jcodeHome string) JcodeUsageSummary {
 	}
 
 	return sum
+}
+
+func prepareJcodeTemplateHome(cfg RunConfig) (string, error) {
+	tpl, err := os.MkdirTemp("", "pu-eval-jcode-template-*")
+	if err != nil {
+		return "", err
+	}
+	if err := seedJcodeHome(tpl, cfg); err != nil {
+		_ = os.RemoveAll(tpl)
+		return "", err
+	}
+	return tpl, nil
+}
+
+// seedJcodeHome writes config.toml (memory disabled) and copies read-only
+// model/pricing caches and migration stamps (never sessions, state, or memory DBs)
+// so fresh runs avoid first-run network fetches.
+func seedJcodeHome(dst string, cfg RunConfig) error {
+	var conf strings.Builder
+	conf.WriteString("[agents]\nmemory_sidecar_enabled = false\n")
+	isProviderDefault := cfg.ReasoningEffort == "" || strings.EqualFold(cfg.ReasoningEffort, "provider_default") || strings.EqualFold(cfg.ReasoningEffort, "default") || strings.EqualFold(cfg.ReasoningEffort, "none")
+	if !isProviderDefault {
+		fmt.Fprintf(&conf, "\n[provider]\nopenai_reasoning_effort = %q\n", cfg.ReasoningEffort)
+	}
+	if err := os.WriteFile(filepath.Join(dst, "config.toml"), []byte(conf.String()), 0o644); err != nil {
+		return err
+	}
+	_ = os.MkdirAll(filepath.Join(dst, "migrations"), 0o755)
+	_ = os.WriteFile(filepath.Join(dst, "migrations", "idle-animation-off"), []byte("1\n"), 0o644)
+	_ = os.WriteFile(filepath.Join(dst, "migrations", "swarm-spawn-mode-inline"), []byte("1\n"), 0o644)
+
+	// Copy static model/pricing caches from existing ~/.jcode/cache if available
+	// (strictly allowlisted cache files; never session search indexes or session DBs).
+	if home, err := os.UserHomeDir(); err == nil {
+		srcCache := filepath.Join(home, ".jcode", "cache")
+		dstCache := filepath.Join(dst, "cache")
+		allowCache := []string{"opencode-go_models.json", "models_dev_pricing.json"}
+		for _, name := range allowCache {
+			src := filepath.Join(srcCache, name)
+			if st, sErr := os.Stat(src); sErr == nil && !st.IsDir() {
+				_ = os.MkdirAll(dstCache, 0o755)
+				_ = copyFile(src, filepath.Join(dstCache, name))
+			}
+		}
+	}
+	return nil
+}
+
+func copyDir(src, dst string) error {
+	return filepath.Walk(src, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(src, path)
+		if err != nil {
+			return err
+		}
+		target := filepath.Join(dst, rel)
+		if info.IsDir() {
+			return os.MkdirAll(target, 0o755)
+		}
+		return copyFile(path, target)
+	})
+}
+
+func copyFile(src, dst string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+	out, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+	_, err = io.Copy(out, in)
+	return err
 }
 
 func isolatedJcodeEnv(baseEnv []string, isoHome string) []string {
