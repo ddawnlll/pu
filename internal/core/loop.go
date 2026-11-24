@@ -74,6 +74,7 @@ type Config struct {
 	MaxCostUSD     float64
 	MaxTurns       int
 	Timeout        time.Duration
+	ProcessStart   time.Time // optional process start timestamp so WallTimeMS covers full CLI startup
 	UntrustedRepo  bool
 	TrustUntrusted bool
 	Ablate         Ablation
@@ -101,7 +102,10 @@ type Report struct {
 // external-content exec gate, 2-stage KV-friendly context compaction,
 // revision-locked evidence verification, and strict budget enforcement.
 func Run(ctx context.Context, cfg Config, streamer Streamer, userPrompt string) (*Report, error) {
-	startTime := time.Now()
+	startTime := cfg.ProcessStart
+	if startTime.IsZero() {
+		startTime = time.Now()
+	}
 
 	if cfg.RepoRoot == "" {
 		cfg.RepoRoot = "."

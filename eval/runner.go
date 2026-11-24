@@ -1,6 +1,7 @@
 package eval
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -9,6 +10,8 @@ import (
 	"os"
 	osexec "os/exec"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -161,12 +164,8 @@ func RunAll(ctx context.Context, cfg RunConfig) ([]Result, error) {
 	if cfg.Timeout <= 0 {
 		cfg.Timeout = 5 * time.Minute
 	}
-	if cfg.ReasoningEffort == "" && cfg.ModelsFile != "" {
-		if cat, cErr := catalog.Load(cfg.ModelsFile); cErr == nil {
-			if m, mErr := cat.Model(cfg.Model); mErr == nil {
-				cfg.ReasoningEffort = m.ReasoningEffort
-			}
-		}
+	if cfg.ReasoningEffort == "" {
+		cfg.ReasoningEffort = "provider_default"
 	}
 	if cfg.Runner == nil {
 		cfg.Runner = defaultAgentRunner
@@ -363,6 +362,9 @@ func runPu(ctx context.Context, worktreeDir string, task Task, cfg RunConfig) Ag
 	if cfg.ModelsFile != "" {
 		args = append(args, "--models", cfg.ModelsFile)
 	}
+	if cfg.ReasoningEffort != "" {
+		args = append(args, "--reasoning-effort", cfg.ReasoningEffort)
+	}
 	if cfg.MaxCostUSD > 0 {
 		args = append(args, "--max-cost-usd", fmt.Sprintf("%.4f", cfg.MaxCostUSD))
 	}
@@ -462,11 +464,13 @@ func runJcode(ctx context.Context, worktreeDir string, task Task, cfg RunConfig)
 	}
 	defer os.RemoveAll(isoHome)
 
-	// Write minimal isolated config.toml disabling memory sidecar and setting
-	// openai_reasoning_effort as best-effort parity (jcode run has no CLI effort flag).
+	// Write minimal isolated config.toml disabling memory sidecar.
+	// Verified from jcode logs/session journals that jcode opencode-go ignores
+	// openai_reasoning_effort and always sends thinking_enabled=None (provider default).
 	var conf strings.Builder
 	conf.WriteString("[agents]\nmemory_sidecar_enabled = false\n")
-	if cfg.ReasoningEffort != "" {
+	isProviderDefault := cfg.ReasoningEffort == "" || strings.EqualFold(cfg.ReasoningEffort, "provider_default") || strings.EqualFold(cfg.ReasoningEffort, "default") || strings.EqualFold(cfg.ReasoningEffort, "none")
+	if !isProviderDefault {
 		fmt.Fprintf(&conf, "\n[provider]\nopenai_reasoning_effort = %q\n", cfg.ReasoningEffort)
 	}
 	_ = os.WriteFile(filepath.Join(isoHome, "config.toml"), []byte(conf.String()), 0o644)
@@ -501,12 +505,16 @@ func runJcode(ctx context.Context, worktreeDir string, task Task, cfg RunConfig)
 	combinedErr := stderr.String() + "\n" + stdout.String()
 	rateLimited := IsRateLimited(combinedErr)
 
-	reasoningNote := "jcode run has no CLI reasoning-effort flag; wrote openai_reasoning_effort in isolated JCODE_HOME/config.toml (unverified for opencode-go)"
+	reasoningEnforced := isProviderDefault
+	reasoningNote := "both tools use provider default (verified jcode opencode-go ignores openai_reasoning_effort and sends thinking_enabled=None)"
+	if !isProviderDefault {
+		reasoningNote = "jcode opencode-go ignores openai_reasoning_effort and sends provider default (thinking_enabled=None)"
+	}
 	out := AgentOutcome{
 		Status:            "completed",
 		WallTimeMS:        extElapsed,
 		RateLimited:       rateLimited,
-		ReasoningEnforced: false,
+		ReasoningEnforced: reasoningEnforced,
 		ReasoningNote:     reasoningNote,
 		Budget:            budget,
 		Err:               runErr,
@@ -521,25 +529,37 @@ func runJcode(ctx context.Context, worktreeDir string, task Task, cfg RunConfig)
 		out.Status = "rate_limited"
 	}
 
-	// Best-effort parse of jcode --json output for token/cost metrics if present.
-	var jResp map[string]any
-	if json.Unmarshal(stdout.Bytes(), &jResp) == nil {
-		if u, ok := jResp["usage"].(map[string]any); ok {
-			out.InputTokens = intFromAny(u["input_tokens"])
-			out.CachedInputTokens = intFromAny(u["cached_input_tokens"])
-			if out.CachedInputTokens == 0 {
-				out.CachedInputTokens = intFromAny(u["cache_read_input_tokens"])
+	// Primary usage source: sum ALL turns from isolated JCODE_HOME session journals/logs
+	// because `jcode run --json` only emits the last turn's usage.
+	sessUsage := ParseJcodeSessionUsage(isoHome)
+	if sessUsage.Turns > 0 {
+		out.Turns = sessUsage.Turns
+		out.InputTokens = sessUsage.InputTokens
+		out.CachedInputTokens = sessUsage.CachedInputTokens
+		out.OutputTokens = sessUsage.OutputTokens
+	} else {
+		// Fallback to jcode --json stdout when no session logs exist.
+		var jResp map[string]any
+		if json.Unmarshal(stdout.Bytes(), &jResp) == nil {
+			if u, ok := jResp["usage"].(map[string]any); ok {
+				out.InputTokens = intFromAny(u["input_tokens"])
+				out.CachedInputTokens = intFromAny(u["cached_input_tokens"])
+				if out.CachedInputTokens == 0 {
+					out.CachedInputTokens = intFromAny(u["cache_read_input_tokens"])
+				}
+				out.OutputTokens = intFromAny(u["output_tokens"])
 			}
-			out.OutputTokens = intFromAny(u["output_tokens"])
-		}
-		if c, ok := jResp["cost_usd"].(float64); ok {
-			out.NotionalCostUSD = c
-		}
-		if t := intFromAny(jResp["turns"]); t > 0 {
-			out.Turns = t
+			if c, ok := jResp["cost_usd"].(float64); ok {
+				out.NotionalCostUSD = c
+			}
+			if t := intFromAny(jResp["turns"]); t > 0 {
+				out.Turns = t
+			}
 		}
 	}
-	if out.NotionalCostUSD == 0 && (out.InputTokens > 0 || out.OutputTokens > 0) && cfg.ModelsFile != "" {
+	// Always compute notional list-price cost from models.toml on cumulative tokens
+	// for apples-to-apples parity with pu.
+	if (out.InputTokens > 0 || out.OutputTokens > 0) && cfg.ModelsFile != "" {
 		if cat, cErr := catalog.Load(cfg.ModelsFile); cErr == nil {
 			if m, mErr := cat.Model(cfg.Model); mErr == nil {
 				out.NotionalCostUSD = m.ComputeCostUSD(out.InputTokens, out.CachedInputTokens, out.OutputTokens)
@@ -547,6 +567,142 @@ func runJcode(ctx context.Context, worktreeDir string, task Task, cfg RunConfig)
 		}
 	}
 	return out
+}
+
+// JcodeUsageSummary holds cumulative token usage summed across all turns
+// recorded in an isolated JCODE_HOME directory.
+type JcodeUsageSummary struct {
+	Turns             int
+	InputTokens       int
+	CachedInputTokens int
+	OutputTokens      int
+}
+
+type jcodeTokenUsage struct {
+	PromptTokens         int `json:"prompt_tokens"`
+	InputTokens          int `json:"input_tokens"`
+	OutputTokens         int `json:"output_tokens"`
+	CacheReadInputTokens int `json:"cache_read_input_tokens"`
+	CachedInputTokens    int `json:"cached_input_tokens"`
+}
+
+type jcodeSessionMsg struct {
+	ID         string           `json:"id"`
+	Role       string           `json:"role"`
+	TokenUsage *jcodeTokenUsage `json:"token_usage"`
+}
+
+var jcodeAPICallLogRE = regexp.MustCompile(`API call complete in [0-9.]+s \(input=(\d+) output=(\d+) cache_read=(\d+)`)
+
+// ParseJcodeSessionUsage sums per-turn token usage across all session files in
+// an isolated JCODE_HOME directory (sessions/*.journal.jsonl and sessions/*.json,
+// deduplicated by message ID, with a fallback to logs/jcode-*.log).
+func ParseJcodeSessionUsage(jcodeHome string) JcodeUsageSummary {
+	var sum JcodeUsageSummary
+	seenMsg := make(map[string]bool)
+
+	addMsg := func(m jcodeSessionMsg) {
+		if m.TokenUsage == nil {
+			return
+		}
+		if m.Role != "" && m.Role != "assistant" {
+			return
+		}
+		if m.ID != "" {
+			if seenMsg[m.ID] {
+				return
+			}
+			seenMsg[m.ID] = true
+		}
+		inTok := m.TokenUsage.InputTokens
+		if inTok == 0 {
+			inTok = m.TokenUsage.PromptTokens
+		}
+		cachedTok := m.TokenUsage.CacheReadInputTokens
+		if cachedTok == 0 {
+			cachedTok = m.TokenUsage.CachedInputTokens
+		}
+		if inTok == 0 && m.TokenUsage.OutputTokens == 0 {
+			return
+		}
+		sum.Turns++
+		sum.InputTokens += inTok
+		sum.CachedInputTokens += cachedTok
+		sum.OutputTokens += m.TokenUsage.OutputTokens
+	}
+
+	// 1. Read sessions/*.journal.jsonl (append_messages per turn).
+	journals, _ := filepath.Glob(filepath.Join(jcodeHome, "sessions", "*.journal.jsonl"))
+	for _, jp := range journals {
+		f, err := os.Open(jp)
+		if err != nil {
+			continue
+		}
+		sc := bufio.NewScanner(f)
+		sc.Buffer(make([]byte, 64*1024), 8*1024*1024)
+		for sc.Scan() {
+			line := strings.TrimSpace(sc.Text())
+			if line == "" {
+				continue
+			}
+			var entry struct {
+				AppendMessages []jcodeSessionMsg `json:"append_messages"`
+			}
+			if json.Unmarshal([]byte(line), &entry) == nil {
+				for _, m := range entry.AppendMessages {
+					addMsg(m)
+				}
+			}
+		}
+		_ = f.Close()
+	}
+
+	// 2. Also scan sessions/*.json (initial snapshot messages, deduplicated by id).
+	snaps, _ := filepath.Glob(filepath.Join(jcodeHome, "sessions", "*.json"))
+	for _, sp := range snaps {
+		data, err := os.ReadFile(sp)
+		if err != nil {
+			continue
+		}
+		var sess struct {
+			Messages []jcodeSessionMsg `json:"messages"`
+		}
+		if json.Unmarshal(data, &sess) == nil {
+			for _, m := range sess.Messages {
+				addMsg(m)
+			}
+		}
+	}
+
+	if sum.Turns > 0 {
+		return sum
+	}
+
+	// 3. Fallback: parse logs/jcode-*.log "API call complete ... (input=... output=... cache_read=...)".
+	logs, _ := filepath.Glob(filepath.Join(jcodeHome, "logs", "jcode-*.log"))
+	for _, lp := range logs {
+		f, err := os.Open(lp)
+		if err != nil {
+			continue
+		}
+		sc := bufio.NewScanner(f)
+		sc.Buffer(make([]byte, 64*1024), 2*1024*1024)
+		for sc.Scan() {
+			m := jcodeAPICallLogRE.FindStringSubmatch(sc.Text())
+			if len(m) == 4 {
+				inTok, _ := strconv.Atoi(m[1])
+				outTok, _ := strconv.Atoi(m[2])
+				cacheTok, _ := strconv.Atoi(m[3])
+				sum.Turns++
+				sum.InputTokens += inTok
+				sum.OutputTokens += outTok
+				sum.CachedInputTokens += cacheTok
+			}
+		}
+		_ = f.Close()
+	}
+
+	return sum
 }
 
 func isolatedJcodeEnv(baseEnv []string, isoHome string) []string {

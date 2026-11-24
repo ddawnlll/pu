@@ -16,7 +16,7 @@ func main() {
 	outPath := flag.String("out", "eval/results.jsonl", "path to append JSONL results")
 	model := flag.String("model", "deepseek-v4.1-flash", "model key/id")
 	modelsFile := flag.String("models", "", "path to models.toml for pu")
-	reasoningEffort := flag.String("reasoning-effort", "", "reasoning effort level (defaults to models.toml value)")
+	reasoningEffort := flag.String("reasoning-effort", "provider_default", "reasoning effort (\"provider_default\" uses provider default for both tools)")
 	maxCost := flag.Float64("max-cost-usd", 0.50, "notional cost cap per task in USD")
 	maxTurns := flag.Int("max-turns", 20, "max turns per task")
 	timeout := flag.Duration("timeout", 3*time.Minute, "timeout per task run")

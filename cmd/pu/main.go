@@ -11,6 +11,7 @@ import (
 	"os/signal"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/ddawnlll/pu/internal/catalog"
 	"github.com/ddawnlll/pu/internal/core"
@@ -18,7 +19,10 @@ import (
 	"github.com/ddawnlll/pu/internal/provider"
 )
 
-var version = "0.1.0-p0"
+var (
+	version      = "0.1.0-p0"
+	processStart = time.Now()
+)
 
 func main() {
 	os.Exit(runCLI(os.Args[1:], os.Stdout, os.Stderr))
@@ -69,6 +73,7 @@ func runAgent(args []string, stdout, stderr io.Writer) int {
 	_ = fs.Bool("headless", true, "run in headless mode")
 	modelName := fs.String("model", "", "model key from models.toml")
 	modelsPath := fs.String("models", "", "path to models.toml (default ~/.pu/models.toml)")
+	reasoningEffort := fs.String("reasoning-effort", "", "override reasoning effort (\"default\" or \"none\" uses provider default)")
 	maxCost := fs.Float64("max-cost-usd", 0, "maximum notional list-price cost in USD")
 	maxTurns := fs.Int("max-turns", 0, "maximum agent turns")
 	timeout := fs.Duration("timeout", 0, "overall run timeout")
@@ -114,6 +119,18 @@ func runAgent(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "pu run: driver %q is not enabled in P0 (expected %q)\n", m.Driver, catalog.DriverOpenAIChatCompat)
 		return 1
 	}
+	switch strings.ToLower(strings.TrimSpace(*reasoningEffort)) {
+	case "":
+		// keep models.toml setting
+	case "default", "provider_default", "none":
+		m.ReasoningParam = ""
+		m.ReasoningEffort = ""
+	default:
+		if m.ReasoningParam == "" {
+			m.ReasoningParam = "reasoning_effort"
+		}
+		m.ReasoningEffort = strings.TrimSpace(*reasoningEffort)
+	}
 
 	apiKey, envVar, required, err := m.ResolveAPIKey(os.Getenv)
 	if err != nil {
@@ -146,6 +163,7 @@ func runAgent(args []string, stdout, stderr io.Writer) int {
 		MaxCostUSD:     *maxCost,
 		MaxTurns:       *maxTurns,
 		Timeout:        *timeout,
+		ProcessStart:   processStart,
 		UntrustedRepo:  *untrustedRepo,
 		TrustUntrusted: *trustUntrusted,
 		Ablate:         core.ParseAblate(*ablateFlag),

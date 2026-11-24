@@ -86,10 +86,22 @@ Current milestone: **P0 Complete (M1–M5 merged to `main`)** — ready for the 
   - Spec §12 Verdict on 3-task dry run: **GO** (`pu` 100.0% >= `jcode` 100.0%; median external wall-time gain **34.9%** >= 15%).
 - Gates: `go vet ./...` PASS; `go test ./...` PASS (including `TestRateLimitDetectionExclusionAndResume`, `TestReportNotesJcodeMissingCostTurnCap`); `CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o pu ./cmd/pu` PASS.
 
+### M5 Eval Parity (merged)
+- Implemented 3 pre-pilot parity fixes on `p0/m5-eval-parity`:
+  1. **Cost parity (`jcode` multi-turn usage):** Added `ParseJcodeSessionUsage` in `eval/runner.go` to sum `token_usage` across all assistant turns from `sessions/*.journal.jsonl` and `sessions/*.json` (deduplicated by message ID, with `logs/jcode-*.log` fallback) in each run's isolated `JCODE_HOME`, recomputing notional list-price cost from `models.toml`. Verified with `TestJcodeMultiTurnSessionUsageParity` (fake 3-turn `jcode` script whose stdout only emits turn 3).
+  2. **`pu` wall-time gap audit:** Captured `processStart := time.Now()` at package init in `cmd/pu/main.go` and passed `ProcessStart` into `core.Config` so `pu`'s `internal_wall_time_ms` covers the full CLI lifecycle (flags, `models.toml` load, Turn-0, loop, shutdown). Per-run external vs internal gap is only 18–31 ms (OS process launch + final JSON flush/exit; no slow startup path found).
+  3. **Reasoning parity:** Inspected `jcode`'s isolated `JCODE_HOME` session journal (`"reasoning_effort": null`) and log (`PROVIDER_CANONICAL_INPUT ... thinking_enabled=None provider_features=false`) with `openai_reasoning_effort = "low"` configured; confirmed `jcode` on `opencode-go` ignores `openai_reasoning_effort` and always uses the provider default. Added `--reasoning-effort` to `pu run` and defaulted `pu-eval` to `provider_default` so both tools use the provider default for the pilot.
+- Live 3-task alternating dry run (`deepseek-v4.1-flash`, `provider_default`, isolated `JCODE_HOME`, `max_cost_usd=0.20`, `max_turns=12`, `timeout=2m`):
+  - `01_fix_sub`: `pu` PASS (5 turns, ext 37,263 ms / int 37,245 ms, gap 18 ms, $0.000788) | `jcode` FAIL timeout (1 turn, ext 120,041 ms, $0.001555)
+  - `02_fix_clamp`: `pu` PASS (4 turns, ext 27,151 ms / int 27,133 ms, gap 18 ms, $0.001322) | `jcode` PASS (7 turns, ext 80,095 ms, 78,026/65,408/1,223 tok, $0.002823)
+  - `03_no_change`: `pu` PASS (3 turns, ext 21,107 ms / int 21,076 ms, gap 31 ms, $0.000608) | `jcode` PASS (5 turns, ext 53,020 ms, 51,458/39,936/656 tok, $0.002242)
+  - Summary: `pu` **3/3 (100.0%)**, median wall **27,151 ms**, median notional **$0.000788** vs `jcode` **2/3 (66.7%)**, median wall **66,558 ms**, median notional **$0.002532** — Spec §12 Verdict: **GO** (+59.2% wall-time gain, +68.9% notional cost gain).
+- Gates: `go vet ./...` PASS; `go test ./...` PASS; `CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o pu ./cmd/pu` PASS.
+
 ## Decisions
 
 - **OpenCode Go endpoint path & session header**: Chat-completions models (including pilot model `deepseek-v4.1-flash`) use `https://opencode.ai/inference/go/openai/v1`, `reasoning_content`, and require `x-opencode-session` (`provider.Request.SessionID`).
-- **Confirmed pilot model**: `deepseek-v4.1-flash` on OpenCode Go (`openai-chat-compat`) with `reasoning_param = "reasoning_effort"` and `reasoning_effort = "low"`.
+- **Confirmed pilot model & reasoning parity**: `deepseek-v4.1-flash` on OpenCode Go (`openai-chat-compat`) using **provider default** reasoning for both `pu` and `jcode` (verified from `jcode`'s session journal & debug log that `jcode` on `opencode-go` ignores `openai_reasoning_effort` and sends `thinking_enabled=None`).
 - **`reasoning_content` in assistant history on `deepseek-v4.1-flash`**: **Accepted (optional)** (verified live via `TestSmokeTwoTurnToolCallReasoningHistory`). Preserving `ReasoningPart` in assistant history succeeds and retains KV cache hits.
 - **Notional list-price cost vs subscription billing**: Local USD cost computed from `models.toml` prices is **notional list-price cost**; every report and journal usage event records **raw token counts** (`input_tokens`, `cached_input_tokens`, `output_tokens`) alongside it.
 - **Deterministic tool-call fallback ID**: Empty streamed tool-call IDs receive `call_<turn>_<index>`.
@@ -101,5 +113,4 @@ Current milestone: **P0 Complete (M1–M5 merged to `main`)** — ready for the 
 
 ## Open questions
 
-- **jcode `--json` token accounting**: `jcode run --json` reports `usage` for the final turn rather than cumulative across all turns, so raw token/notional-cost comparisons against `pu` (which sums across all turns) should note this until `jcode` exposes cumulative session usage.
 - **OpenCode Go 5-hour / weekly usage limits during 30-task pilot**: Handled via `rate_limited` classification + `pu-eval --resume` so interrupted pilots can resume cleanly after the window resets.
