@@ -267,3 +267,50 @@ func TestStreamHTTPError(t *testing.T) {
 		t.Fatalf("expected HTTP 401 error, got %v", err)
 	}
 }
+
+func TestStreamIncompleteWithoutDoneOrFinishReason(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		// Stream cuts off mid-response: no finish_reason and no [DONE].
+		_, _ = io.WriteString(w, `data: {"choices":[{"index":0,"delta":{"content":"partial output"}}]}`+"\n\n")
+	}))
+	defer srv.Close()
+
+	client := &OpenAICompatClient{Endpoint: srv.URL, HTTPClient: srv.Client()}
+	_, err := client.Stream(context.Background(), Request{
+		Model: "deepseek-v4.1-flash",
+		Items: []Item{{Role: RoleUser, Parts: []ContentPart{TextPart{Text: "hi"}}}},
+	}, nil)
+	if err == nil || !strings.Contains(err.Error(), "incomplete SSE stream") {
+		t.Fatalf("expected incomplete SSE stream error, got %v", err)
+	}
+}
+
+func TestStreamToolCallEmptyIDGetsDeterministicID(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(w, `data: {"choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"type":"function","function":{"name":"read","arguments":"{\"path\":\"a.go\"}"}}]}}]}`+"\n\n")
+		_, _ = io.WriteString(w, `data: {"choices":[{"index":0,"delta":{"tool_calls":[{"index":1,"type":"function","function":{"name":"read","arguments":"{\"path\":\"b.go\"}"}}]}}]}`+"\n\n")
+		_, _ = io.WriteString(w, `data: {"choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}]}`+"\n\n")
+		_, _ = io.WriteString(w, "data: [DONE]\n\n")
+	}))
+	defer srv.Close()
+
+	client := &OpenAICompatClient{Endpoint: srv.URL, HTTPClient: srv.Client()}
+	resp, err := client.Stream(context.Background(), Request{
+		Model: "deepseek-v4.1-flash",
+		Turn:  3,
+		Items: []Item{{Role: RoleUser, Parts: []ContentPart{TextPart{Text: "read both"}}}},
+	}, nil)
+	if err != nil {
+		t.Fatalf("Stream failed: %v", err)
+	}
+	if len(resp.Item.Parts) != 2 {
+		t.Fatalf("expected 2 tool calls, got %d", len(resp.Item.Parts))
+	}
+	tc0 := resp.Item.Parts[0].(ToolCallPart)
+	tc1 := resp.Item.Parts[1].(ToolCallPart)
+	if tc0.ID != "call_3_0" || tc1.ID != "call_3_1" {
+		t.Fatalf("unexpected deterministic IDs: %q, %q (want call_3_0, call_3_1)", tc0.ID, tc1.ID)
+	}
+}

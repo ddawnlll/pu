@@ -75,7 +75,7 @@ func (c *OpenAICompatClient) Stream(ctx context.Context, req Request, onEvent fu
 		return nil, fmt.Errorf("provider returned HTTP %d: %s", httpResp.StatusCode, strings.TrimSpace(string(errBody)))
 	}
 
-	return parseOpenAISSE(httpResp.Body, onEvent)
+	return parseOpenAISSE(httpResp.Body, req.Turn, onEvent)
 }
 
 func buildOpenAIChatRequest(req Request) ([]byte, error) {
@@ -277,7 +277,7 @@ type toolCallAccum struct {
 	args strings.Builder
 }
 
-func parseOpenAISSE(body io.Reader, onEvent func(StreamEvent)) (*Response, error) {
+func parseOpenAISSE(body io.Reader, turn int, onEvent func(StreamEvent)) (*Response, error) {
 	reader := bufio.NewReaderSize(body, 64*1024)
 
 	var textBuf strings.Builder
@@ -285,6 +285,7 @@ func parseOpenAISSE(body io.Reader, onEvent func(StreamEvent)) (*Response, error
 	toolCalls := make(map[int]*toolCallAccum)
 	var usage Usage
 	var finishReason string
+	var sawDone bool
 	var dataLines [][]byte
 
 	flushEvent := func() (done bool, err error) {
@@ -299,6 +300,7 @@ func parseOpenAISSE(body io.Reader, onEvent func(StreamEvent)) (*Response, error
 			return false, nil
 		}
 		if bytes.Equal(trimmed, []byte("[DONE]")) {
+			sawDone = true
 			return true, nil
 		}
 
@@ -416,6 +418,10 @@ func parseOpenAISSE(body io.Reader, onEvent func(StreamEvent)) (*Response, error
 		}
 	}
 
+	if !sawDone && finishReason == "" {
+		return nil, errors.New("incomplete SSE stream: ended without [DONE] or finish_reason")
+	}
+
 	parts := make([]ContentPart, 0, 2+len(toolCalls))
 	if reasonBuf.Len() > 0 {
 		parts = append(parts, ReasoningPart{Text: reasonBuf.String()})
@@ -431,8 +437,12 @@ func parseOpenAISSE(body io.Reader, onEvent func(StreamEvent)) (*Response, error
 		sort.Ints(indices)
 		for _, idx := range indices {
 			acc := toolCalls[idx]
+			id := acc.id
+			if id == "" {
+				id = fmt.Sprintf("call_%d_%d", turn, idx)
+			}
 			parts = append(parts, ToolCallPart{
-				ID:        acc.id,
+				ID:        id,
 				Name:      acc.name,
 				Arguments: acc.args.String(),
 			})

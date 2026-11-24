@@ -128,6 +128,7 @@ type Usage struct {
 type Request struct {
 	Model           string
 	SessionID       string
+	Turn            int
 	Items           []Item
 	Tools           []ToolDef
 	ReasoningParam  string
