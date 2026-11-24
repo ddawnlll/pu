@@ -330,3 +330,47 @@ func TestCompaction75And85PreservesEventsJSONL(t *testing.T) {
 		t.Fatalf("ReadFile events.jsonl failed: len=%d truncated=%v err=%v", len(events), truncated, err)
 	}
 }
+
+func TestEarlyCompleteOnGreenCheckWithNoOpenSteps(t *testing.T) {
+	repo := t.TempDir()
+	_ = os.WriteFile(filepath.Join(repo, "go.mod"), []byte("module example.com/t\n\ngo 1.21\n"), 0o644)
+	_ = os.WriteFile(filepath.Join(repo, "ok_test.go"), []byte("package t\nimport \"testing\"\nfunc TestOK(t *testing.T) {}\n"), 0o644)
+
+	calls := 0
+	fake := fakeStreamerFunc(func(ctx context.Context, req provider.Request, _ func(provider.StreamEvent)) (*provider.Response, error) {
+		calls++
+		switch calls {
+		case 1:
+			return &provider.Response{
+				FinishReason: "tool_calls",
+				Usage:        provider.Usage{InputTokens: 100, OutputTokens: 20, TotalTokens: 120},
+				Item: provider.Item{Role: provider.RoleAssistant, Parts: []provider.ContentPart{
+					provider.ToolCallPart{ID: "p1", Name: "patch", Arguments: `{"mode":"create","path":"hello.go","content":"package t\n"}`},
+				}},
+			}, nil
+		case 2:
+			return &provider.Response{
+				FinishReason: "tool_calls",
+				Usage:        provider.Usage{InputTokens: 120, OutputTokens: 20, TotalTokens: 140},
+				Item: provider.Item{Role: provider.RoleAssistant, Parts: []provider.ContentPart{
+					provider.ToolCallPart{ID: "e1", Name: "exec", Arguments: `{"command":"go test ./..."}`},
+				}},
+			}, nil
+		default:
+			t.Fatalf("unexpected turn %d: loop should have completed immediately after green go test with no open plan steps", calls)
+			return nil, nil
+		}
+	})
+
+	rep, err := Run(context.Background(), Config{
+		RepoRoot:  repo,
+		SessionID: "sess-early-complete",
+		Model:     catalog.Model{ID: "deepseek-v4.1-flash", ContextWindow: 100000},
+	}, fake, "create hello.go and verify")
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if rep.Status != StatusCompleted || rep.Turns != 2 {
+		t.Fatalf("got status=%s turns=%d, want completed turns=2", rep.Status, rep.Turns)
+	}
+}
