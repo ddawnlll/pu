@@ -105,6 +105,7 @@ func executeToolCall(
 	planMgr *plan.Manager,
 	untrustedTainted bool,
 	trustUntrusted bool,
+	noHashline bool,
 	tc provider.ToolCallPart,
 ) toolExecOutcome {
 	switch tc.Name {
@@ -167,6 +168,9 @@ func executeToolCall(
 		var req edit.PatchRequest
 		if err := json.Unmarshal([]byte(tc.Arguments), &req); err != nil {
 			return toolExecOutcome{output: fmt.Sprintf("error: invalid patch arguments: %v", err), isError: true}
+		}
+		if noHashline && (req.Mode == "" || req.Mode == edit.ModeHashline) {
+			return toolExecOutcome{output: "error: hashline mode disabled by --ablate=hashline; use search_replace or full_rewrite", isError: true}
 		}
 		res, err := tracker.Patch(cp, req)
 		if err != nil {

@@ -1,0 +1,6 @@
+id = "02_fix_clamp"
+repo = "../../.."
+commit = "HEAD"
+category = "bugfix"
+prompt = "In eval/sample_tasks/toyrepo/calc.go, fix Clamp(v, lo, hi) so it clamps v to [lo, hi], and verify with `cd eval/sample_tasks/toyrepo && go test -run TestClamp`."
+acceptance = "cd eval/sample_tasks/toyrepo && go test -run TestClamp ./..."

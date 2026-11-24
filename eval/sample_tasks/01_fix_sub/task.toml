@@ -1,0 +1,6 @@
+id = "01_fix_sub"
+repo = "../../.."
+commit = "HEAD"
+category = "bugfix"
+prompt = "In eval/sample_tasks/toyrepo/calc.go, fix Sub(a, b) so it returns a - b, and verify with `cd eval/sample_tasks/toyrepo && go test -run TestSub`."
+acceptance = "cd eval/sample_tasks/toyrepo && go test -run TestSub ./..."
