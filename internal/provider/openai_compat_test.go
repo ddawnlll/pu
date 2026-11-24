@@ -189,12 +189,13 @@ func TestStreamUsageAndCachedTokens(t *testing.T) {
 }
 
 func TestStreamReasoningHeadersAndRequestPayload(t *testing.T) {
-	var gotUA, gotAuth string
+	var gotUA, gotAuth, gotSession string
 	var gotBody map[string]any
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotUA = r.Header.Get("User-Agent")
 		gotAuth = r.Header.Get("Authorization")
+		gotSession = r.Header.Get("x-opencode-session")
 		b, _ := io.ReadAll(r.Body)
 		_ = json.Unmarshal(b, &gotBody)
 
@@ -215,6 +216,7 @@ func TestStreamReasoningHeadersAndRequestPayload(t *testing.T) {
 
 	resp, err := client.Stream(context.Background(), Request{
 		Model:           "deepseek-v4.1-flash",
+		SessionID:       "sess-test-123",
 		ReasoningParam:  "reasoning_effort",
 		ReasoningEffort: "high",
 		Items: []Item{
@@ -230,6 +232,9 @@ func TestStreamReasoningHeadersAndRequestPayload(t *testing.T) {
 	}
 	if gotAuth != "Bearer secret-key" {
 		t.Fatalf("Authorization = %q, want Bearer secret-key", gotAuth)
+	}
+	if gotSession != "sess-test-123" {
+		t.Fatalf("x-opencode-session = %q, want sess-test-123", gotSession)
 	}
 	if gotBody["reasoning_effort"] != "high" {
 		t.Fatalf("expected reasoning_effort=high in payload, got %v", gotBody["reasoning_effort"])

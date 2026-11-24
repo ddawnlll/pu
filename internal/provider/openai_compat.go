@@ -53,6 +53,9 @@ func (c *OpenAICompatClient) Stream(ctx context.Context, req Request, onEvent fu
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("Accept", "text/event-stream")
 	httpReq.Header.Set("User-Agent", ua)
+	if req.SessionID != "" {
+		httpReq.Header.Set("x-opencode-session", req.SessionID)
+	}
 	if c.APIKey != "" {
 		httpReq.Header.Set("Authorization", "Bearer "+c.APIKey)
 	}

@@ -127,6 +127,7 @@ type Usage struct {
 // Request is a single streaming completion request.
 type Request struct {
 	Model           string
+	SessionID       string
 	Items           []Item
 	Tools           []ToolDef
 	ReasoningParam  string

@@ -32,8 +32,11 @@ func TestSmokeOpenCodeGo(t *testing.T) {
 	}
 
 	resp, err := client.Stream(ctx, Request{
-		Model:     model,
-		MaxTokens: 32,
+		Model:           model,
+		SessionID:       "pu-smoke-test",
+		ReasoningParam:  "reasoning_effort",
+		ReasoningEffort: "low",
+		MaxTokens:       64,
 		Items: []Item{
 			{Role: RoleUser, Parts: []ContentPart{TextPart{Text: "Reply with the single word: pong"}}},
 		},
