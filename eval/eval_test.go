@@ -2,6 +2,7 @@ package eval
 
 import (
 	"context"
+	"errors"
 	"os"
 	osexec "os/exec"
 	"path/filepath"
@@ -141,5 +142,132 @@ func runGit(t *testing.T, dir string, args ...string) {
 	cmd.Dir = dir
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("git %v: %v\n%s", args, err, string(out))
+	}
+}
+
+func TestRateLimitDetectionExclusionAndResume(t *testing.T) {
+	if !IsRateLimited("provider returned HTTP 429: Too Many Requests") {
+		t.Fatalf("expected HTTP 429 to be detected as rate limited")
+	}
+	if !IsRateLimited(`{"error":{"type":"EntitlementError","message":"5-hour limit reached"}}`) {
+		t.Fatalf("expected OpenCode Go 5-hour limit to be detected as rate limited")
+	}
+	if IsRateLimited("syntax error in foo.go") {
+		t.Fatalf("normal error must not be flagged as rate limited")
+	}
+
+	tmp := t.TempDir()
+	repo := filepath.Join(tmp, "repo")
+	_ = os.MkdirAll(repo, 0o755)
+	runGit(t, repo, "init")
+	runGit(t, repo, "config", "user.name", "test")
+	runGit(t, repo, "config", "user.email", "test@example.com")
+	_ = os.WriteFile(filepath.Join(repo, "val.txt"), []byte("bad\n"), 0o644)
+	runGit(t, repo, "add", ".")
+	runGit(t, repo, "commit", "-m", "init")
+
+	tasksDir := filepath.Join(tmp, "tasks")
+	for _, id := range []string{"01_ok", "02_rl"} {
+		d := filepath.Join(tasksDir, id)
+		_ = os.MkdirAll(d, 0o755)
+		toml := "id = \"" + id + "\"\nrepo = \"" + filepath.ToSlash(repo) + "\"\ncommit = \"HEAD\"\ncategory = \"bugfix\"\nprompt = \"fix\"\nacceptance = \"grep -q good val.txt\"\n"
+		_ = os.WriteFile(filepath.Join(d, "task.toml"), []byte(toml), 0o644)
+	}
+
+	resultsPath := filepath.Join(tmp, "results.jsonl")
+	// First run: 01_ok passes, 02_rl hits HTTP 429.
+	_, err := RunAll(context.Background(), RunConfig{
+		TasksDir:    tasksDir,
+		ResultsPath: resultsPath,
+		Model:       "deepseek-v4.1-flash",
+		MaxCostUSD:  0.20,
+		MaxTurns:    10,
+		Timeout:     30 * time.Second,
+		Tools:       []string{"pu"},
+		Runner: func(ctx context.Context, tool, worktreeDir string, task Task, cfg RunConfig) AgentOutcome {
+			if task.ID == "02_rl" {
+				return AgentOutcome{
+					Status: "failed",
+					Err:    errors.New("provider returned HTTP 429: rate limit exceeded"),
+				}
+			}
+			_ = os.WriteFile(filepath.Join(worktreeDir, "val.txt"), []byte("good\n"), 0o644)
+			return AgentOutcome{
+				Status:             "completed",
+				WallTimeMS:         1200,
+				InternalWallTimeMS: 1150,
+				NotionalCostUSD:    0.001,
+			}
+		},
+	})
+	if err != nil {
+		t.Fatalf("first RunAll: %v", err)
+	}
+
+	rows, err := ReadResults(resultsPath)
+	if err != nil || len(rows) != 2 {
+		t.Fatalf("ReadResults 1: len=%d err=%v", len(rows), err)
+	}
+	if !rows[1].RateLimited || rows[1].AgentStatus != "rate_limited" {
+		t.Fatalf("expected 02_rl to be rate_limited, got %+v", rows[1])
+	}
+	if rows[0].WallTimeMS != 1200 || rows[0].InternalWallTimeMS != 1150 {
+		t.Fatalf("expected external=1200 internal=1150, got %+v", rows[0])
+	}
+	if !rows[0].Budget.CostCapEnforced || !rows[0].Budget.TurnCapEnforced {
+		t.Fatalf("expected pu budget caps recorded as enforced, got %+v", rows[0].Budget)
+	}
+
+	sum1 := Summarize(rows)
+	if sum1.ByTool["pu"].Total != 1 || sum1.ByTool["pu"].Passed != 1 || sum1.ByTool["pu"].RateLimited != 1 {
+		t.Fatalf("rate_limited run should be excluded from Total/Passed: %+v", sum1.ByTool["pu"])
+	}
+	if !strings.Contains(FormatReport(sum1), "rate_limited: 1 excluded, retryable") {
+		t.Fatalf("expected rate_limited count in report:\n%s", FormatReport(sum1))
+	}
+
+	// Second run with Resume=true: must skip 01_ok and retry ONLY 02_rl.
+	var retried []string
+	_, err = RunAll(context.Background(), RunConfig{
+		TasksDir:    tasksDir,
+		ResultsPath: resultsPath,
+		Model:       "deepseek-v4.1-flash",
+		MaxCostUSD:  0.20,
+		MaxTurns:    10,
+		Timeout:     30 * time.Second,
+		Tools:       []string{"pu"},
+		Resume:      true,
+		Runner: func(ctx context.Context, tool, worktreeDir string, task Task, cfg RunConfig) AgentOutcome {
+			retried = append(retried, task.ID+":"+tool)
+			_ = os.WriteFile(filepath.Join(worktreeDir, "val.txt"), []byte("good\n"), 0o644)
+			return AgentOutcome{Status: "completed", WallTimeMS: 900, NotionalCostUSD: 0.001}
+		},
+	})
+	if err != nil {
+		t.Fatalf("resume RunAll: %v", err)
+	}
+	if !reflect.DeepEqual(retried, []string{"02_rl:pu"}) {
+		t.Fatalf("resume retried = %v, want [02_rl:pu]", retried)
+	}
+}
+
+func TestReportNotesJcodeMissingCostTurnCap(t *testing.T) {
+	sum := Summarize([]Result{
+		{
+			TaskID: "t1", Tool: "jcode", Passed: true, WallTimeMS: 2000,
+			Budget:        BudgetSpec{TimeoutMS: 60000, TimeoutEnforced: true, CostCapEnforced: false, TurnCapEnforced: false},
+			ReasoningNote: "jcode run has no CLI reasoning-effort flag",
+		},
+		{
+			TaskID: "t1", Tool: "pu", Passed: true, WallTimeMS: 1000,
+			Budget: BudgetSpec{MaxCostUSD: 0.2, MaxTurns: 10, TimeoutMS: 60000, CostCapEnforced: true, TurnCapEnforced: true, TimeoutEnforced: true},
+		},
+	})
+	rep := FormatReport(sum)
+	if !strings.Contains(rep, "Budget note (jcode): no CLI cost/turn cap enforced") {
+		t.Fatalf("expected budget note for jcode in report:\n%s", rep)
+	}
+	if !strings.Contains(rep, "Reasoning note (jcode):") {
+		t.Fatalf("expected reasoning note for jcode in report:\n%s", rep)
 	}
 }

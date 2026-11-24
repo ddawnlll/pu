@@ -12,14 +12,19 @@ import (
 // ToolStats aggregates metrics for one tool across an eval run.
 type ToolStats struct {
 	Tool                  string
-	Total                 int
+	Total                 int // excludes rate_limited runs
 	Passed                int
+	RateLimited           int
 	SuccessRate           float64
 	MedianWallTimeMS      float64
 	MedianNotionalCostUSD float64
 	MedianInputTokens     float64
 	MedianCachedTokens    float64
 	MedianOutputTokens    float64
+	CostCapEnforced       bool
+	TurnCapEnforced       bool
+	ReasoningEnforced     bool
+	ReasoningNote         string
 }
 
 // ReportSummary holds per-tool summaries and the spec §12 Go/No-Go verdict.
@@ -57,7 +62,8 @@ func ReadResults(path string) ([]Result, error) {
 	return out, nil
 }
 
-// Summarize computes per-tool metrics and the spec §12 P0 -> 0.1 Go/No-Go verdict.
+// Summarize computes per-tool metrics (excluding rate_limited runs from pass/fail
+// and medians) and the spec §12 P0 -> 0.1 Go/No-Go verdict.
 func Summarize(results []Result) ReportSummary {
 	grouped := make(map[string][]Result)
 	for _, r := range results {
@@ -66,9 +72,26 @@ func Summarize(results []Result) ReportSummary {
 
 	byTool := make(map[string]ToolStats, len(grouped))
 	for tool, rows := range grouped {
-		st := ToolStats{Tool: tool, Total: len(rows)}
+		st := ToolStats{Tool: tool}
 		var wallTimes, costs, inToks, cacheToks, outToks []float64
 		for _, r := range rows {
+			if r.Budget.CostCapEnforced {
+				st.CostCapEnforced = true
+			}
+			if r.Budget.TurnCapEnforced {
+				st.TurnCapEnforced = true
+			}
+			if r.ReasoningEnforced {
+				st.ReasoningEnforced = true
+			}
+			if r.ReasoningNote != "" && st.ReasoningNote == "" {
+				st.ReasoningNote = r.ReasoningNote
+			}
+			if r.RateLimited || r.AgentStatus == "rate_limited" {
+				st.RateLimited++
+				continue
+			}
+			st.Total++
 			if r.Passed {
 				st.Passed++
 				wallTimes = append(wallTimes, float64(r.WallTimeMS))
@@ -130,7 +153,8 @@ func computeVerdict(byTool map[string]ToolStats) (string, string) {
 		pu.SuccessRate*100, jc.SuccessRate*100, timeGain*100, costGain*100)
 }
 
-// FormatReport renders a concise human-readable report.
+// FormatReport renders a concise human-readable report including budget parity
+// notes, reasoning parity notes, and excluded rate-limited runs.
 func FormatReport(s ReportSummary) string {
 	tools := make([]string, 0, len(s.ByTool))
 	for t := range s.ByTool {
@@ -142,12 +166,25 @@ func FormatReport(s ReportSummary) string {
 	sb.WriteString("=== pu P0 Eval Report ===\n")
 	for _, t := range tools {
 		st := s.ByTool[t]
-		fmt.Fprintf(&sb, "%-6s  pass: %d/%d (%.1f%%)  median_wall_ms: %.0f  median_notional_cost: $%.6f  median_tokens(in/cached/out): %.0f/%.0f/%.0f\n",
+		fmt.Fprintf(&sb, "%-6s  pass: %d/%d (%.1f%%)  median_wall_ms: %.0f  median_notional_cost: $%.6f  median_tokens(in/cached/out): %.0f/%.0f/%.0f",
 			st.Tool, st.Passed, st.Total, st.SuccessRate*100,
 			st.MedianWallTimeMS, st.MedianNotionalCostUSD,
 			st.MedianInputTokens, st.MedianCachedTokens, st.MedianOutputTokens)
+		if st.RateLimited > 0 {
+			fmt.Fprintf(&sb, "  [rate_limited: %d excluded, retryable]", st.RateLimited)
+		}
+		sb.WriteByte('\n')
 	}
-	fmt.Fprintf(&sb, "Verdict (spec §12): %s — %s\n", s.Verdict, s.VerdictMsg)
+	for _, t := range tools {
+		st := s.ByTool[t]
+		if !st.CostCapEnforced || !st.TurnCapEnforced {
+			fmt.Fprintf(&sb, "Budget note (%s): no CLI cost/turn cap enforced (harness wall-clock timeout only)\n", st.Tool)
+		}
+		if st.ReasoningNote != "" {
+			fmt.Fprintf(&sb, "Reasoning note (%s): %s\n", st.Tool, st.ReasoningNote)
+		}
+	}
+	fmt.Fprintf(&sb, "Verdict (spec §12): %s - %s\n", s.Verdict, s.VerdictMsg)
 	return sb.String()
 }
 

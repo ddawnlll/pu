@@ -15,36 +15,57 @@ import (
 	"github.com/ddawnlll/pu/internal/catalog"
 )
 
+// BudgetSpec records the budget limits configured and actually enforced for a run.
+type BudgetSpec struct {
+	MaxCostUSD      float64 `json:"max_cost_usd,omitempty"`
+	MaxTurns        int     `json:"max_turns,omitempty"`
+	TimeoutMS       int64   `json:"timeout_ms,omitempty"`
+	CostCapEnforced bool    `json:"cost_cap_enforced"`
+	TurnCapEnforced bool    `json:"turn_cap_enforced"`
+	TimeoutEnforced bool    `json:"timeout_enforced"`
+}
+
 // Result is one line appended to results.jsonl.
 type Result struct {
-	Timestamp          time.Time `json:"ts"`
-	TaskID             string    `json:"task_id"`
-	Category           string    `json:"category"`
-	Tool               string    `json:"tool"` // "pu" or "jcode"
-	OrderIndex         int       `json:"order_index"`
-	Model              string    `json:"model"`
-	Passed             bool      `json:"passed"`
-	AgentStatus        string    `json:"agent_status"`
-	Turns              int       `json:"turns"`
-	WallTimeMS         int64     `json:"wall_time_ms"`
-	InputTokens        int       `json:"input_tokens"`
-	CachedInputTokens  int       `json:"cached_input_tokens"`
-	OutputTokens       int       `json:"output_tokens"`
-	NotionalCostUSD    float64   `json:"notional_cost_usd"`
-	AcceptanceExitCode int       `json:"acceptance_exit_code"`
-	Error              string    `json:"error,omitempty"`
+	Timestamp          time.Time  `json:"ts"`
+	TaskID             string     `json:"task_id"`
+	Category           string     `json:"category"`
+	Tool               string     `json:"tool"` // "pu" or "jcode"
+	OrderIndex         int        `json:"order_index"`
+	Model              string     `json:"model"`
+	ReasoningEffort    string     `json:"reasoning_effort,omitempty"`
+	ReasoningEnforced  bool       `json:"reasoning_enforced"`
+	ReasoningNote      string     `json:"reasoning_note,omitempty"`
+	Budget             BudgetSpec `json:"budget"`
+	Passed             bool       `json:"passed"`
+	RateLimited        bool       `json:"rate_limited,omitempty"`
+	AgentStatus        string     `json:"agent_status"`
+	Turns              int        `json:"turns"`
+	WallTimeMS         int64      `json:"wall_time_ms"`                    // external process start -> exit
+	InternalWallTimeMS int64      `json:"internal_wall_time_ms,omitempty"` // tool's self-reported wall time (e.g. pu)
+	InputTokens        int        `json:"input_tokens"`
+	CachedInputTokens  int        `json:"cached_input_tokens"`
+	OutputTokens       int        `json:"output_tokens"`
+	NotionalCostUSD    float64    `json:"notional_cost_usd"`
+	AcceptanceExitCode int        `json:"acceptance_exit_code"`
+	Error              string     `json:"error,omitempty"`
 }
 
 // AgentOutcome is returned by a single tool execution adapter (pu or jcode).
 type AgentOutcome struct {
-	Status            string
-	Turns             int
-	WallTimeMS        int64
-	InputTokens       int
-	CachedInputTokens int
-	OutputTokens      int
-	NotionalCostUSD   float64
-	Err               error
+	Status             string
+	Turns              int
+	WallTimeMS         int64 // external process start -> exit
+	InternalWallTimeMS int64 // tool self-reported wall time, if any
+	InputTokens        int
+	CachedInputTokens  int
+	OutputTokens       int
+	NotionalCostUSD    float64
+	RateLimited        bool
+	ReasoningEnforced  bool
+	ReasoningNote      string
+	Budget             BudgetSpec
+	Err                error
 }
 
 // AgentRunner executes a tool on a prepared worktree directory.
@@ -52,18 +73,20 @@ type AgentRunner func(ctx context.Context, tool, worktreeDir string, task Task, 
 
 // RunConfig configures an evaluation run.
 type RunConfig struct {
-	TasksDir    string
-	ResultsPath string
-	Model       string
-	ModelsFile  string
-	MaxCostUSD  float64
-	MaxTurns    int
-	Timeout     time.Duration
-	PuBin       string
-	JcodeBin    string
-	Tools       []string // e.g. ["pu", "jcode"] or ["pu"]
-	Ablate      string
-	Runner      AgentRunner // optional override for tests
+	TasksDir        string
+	ResultsPath     string
+	Model           string
+	ModelsFile      string
+	ReasoningEffort string
+	MaxCostUSD      float64
+	MaxTurns        int
+	Timeout         time.Duration
+	PuBin           string
+	JcodeBin        string
+	Tools           []string // e.g. ["pu", "jcode"] or ["pu"]
+	Ablate          string
+	Resume          bool        // skip (task_id, tool) already completed (non-rate_limited) in ResultsPath
+	Runner          AgentRunner // optional override for tests
 }
 
 // ToolOrder returns the spec §12 alternating execution order for a 1-based task
@@ -88,9 +111,40 @@ func ToolOrder(taskNum1Based int, enabled []string) []string {
 	return out
 }
 
+// IsRateLimited reports whether an error/output string indicates a provider
+// HTTP 429 or OpenCode Go usage/quota limit.
+func IsRateLimited(s string) bool {
+	if s == "" {
+		return false
+	}
+	lower := strings.ToLower(s)
+	needles := []string{
+		"http 429",
+		"status 429",
+		"429 too many requests",
+		"too many requests",
+		"rate_limited",
+		"rate-limited",
+		"rate limit",
+		"usage limit",
+		"quota exceeded",
+		"entitlementerror",
+		"5-hour limit",
+		"weekly limit",
+		"monthly limit",
+	}
+	for _, n := range needles {
+		if strings.Contains(lower, n) {
+			return true
+		}
+	}
+	return false
+}
+
 // RunAll runs all tasks in cfg.TasksDir in alternating order on fresh git
 // worktrees, runs each task's independent acceptance command, and appends
-// metrics to cfg.ResultsPath.
+// metrics to cfg.ResultsPath. When cfg.Resume is true, (task_id, tool) pairs
+// that already have a non-rate_limited entry in cfg.ResultsPath are skipped.
 func RunAll(ctx context.Context, cfg RunConfig) ([]Result, error) {
 	tasks, err := LoadTasks(cfg.TasksDir)
 	if err != nil {
@@ -107,8 +161,27 @@ func RunAll(ctx context.Context, cfg RunConfig) ([]Result, error) {
 	if cfg.Timeout <= 0 {
 		cfg.Timeout = 5 * time.Minute
 	}
+	if cfg.ReasoningEffort == "" && cfg.ModelsFile != "" {
+		if cat, cErr := catalog.Load(cfg.ModelsFile); cErr == nil {
+			if m, mErr := cat.Model(cfg.Model); mErr == nil {
+				cfg.ReasoningEffort = m.ReasoningEffort
+			}
+		}
+	}
 	if cfg.Runner == nil {
 		cfg.Runner = defaultAgentRunner
+	}
+
+	completedKeys := make(map[string]bool)
+	if cfg.Resume {
+		if existing, rErr := ReadResults(cfg.ResultsPath); rErr == nil {
+			for _, r := range existing {
+				if r.RateLimited || r.AgentStatus == "rate_limited" {
+					continue
+				}
+				completedKeys[r.TaskID+"\x00"+r.Tool] = true
+			}
+		}
 	}
 
 	if err := os.MkdirAll(filepath.Dir(cfg.ResultsPath), 0o755); err != nil {
@@ -124,6 +197,9 @@ func RunAll(ctx context.Context, cfg RunConfig) ([]Result, error) {
 	for idx, task := range tasks {
 		order := ToolOrder(idx+1, cfg.Tools)
 		for orderPos, tool := range order {
+			if cfg.Resume && completedKeys[task.ID+"\x00"+tool] {
+				continue
+			}
 			res := runOne(ctx, tool, orderPos+1, task, cfg)
 			all = append(all, res)
 
@@ -137,6 +213,7 @@ func RunAll(ctx context.Context, cfg RunConfig) ([]Result, error) {
 }
 
 func runOne(ctx context.Context, tool string, orderIdx int, task Task, cfg RunConfig) Result {
+	budget := defaultBudgetForTool(tool, cfg)
 	wtDir, cleanup, err := createWorktree(task.Repo, task.Commit)
 	if err != nil {
 		return Result{
@@ -146,6 +223,8 @@ func runOne(ctx context.Context, tool string, orderIdx int, task Task, cfg RunCo
 			Tool:               tool,
 			OrderIndex:         orderIdx,
 			Model:              cfg.Model,
+			ReasoningEffort:    cfg.ReasoningEffort,
+			Budget:             budget,
 			AgentStatus:        "setup_error",
 			AcceptanceExitCode: -1,
 			Error:              err.Error(),
@@ -156,18 +235,36 @@ func runOne(ctx context.Context, tool string, orderIdx int, task Task, cfg RunCo
 	runCtx, cancel := context.WithTimeout(ctx, cfg.Timeout)
 	defer cancel()
 
-	start := time.Now()
+	// Measure external wall time consistently from process start to exit for both tools.
+	extStart := time.Now()
 	outcome := cfg.Runner(runCtx, tool, wtDir, task, cfg)
-	if outcome.WallTimeMS == 0 {
-		outcome.WallTimeMS = time.Since(start).Milliseconds()
+	extWallMS := time.Since(extStart).Milliseconds()
+	if outcome.WallTimeMS > 0 {
+		// Allow adapters (which wrap cmd.Run() directly) or test fakes to provide exact process wall time.
+		extWallMS = outcome.WallTimeMS
 	}
 
-	accExit := runAcceptance(ctx, wtDir, task.Acceptance)
+	if outcome.Budget != (BudgetSpec{}) {
+		budget = outcome.Budget
+	}
 
 	errStr := ""
 	if outcome.Err != nil {
 		errStr = outcome.Err.Error()
 	}
+	rateLimited := outcome.RateLimited || outcome.Status == "rate_limited" || IsRateLimited(errStr)
+	agentStatus := outcome.Status
+	if rateLimited {
+		agentStatus = "rate_limited"
+	}
+
+	accExit := -1
+	passed := false
+	if !rateLimited && agentStatus != "failed" && agentStatus != "setup_error" {
+		accExit = runAcceptance(ctx, wtDir, task.Acceptance)
+		passed = accExit == 0
+	}
+
 	return Result{
 		Timestamp:          time.Now().UTC(),
 		TaskID:             task.ID,
@@ -175,10 +272,16 @@ func runOne(ctx context.Context, tool string, orderIdx int, task Task, cfg RunCo
 		Tool:               tool,
 		OrderIndex:         orderIdx,
 		Model:              cfg.Model,
-		Passed:             accExit == 0,
-		AgentStatus:        outcome.Status,
+		ReasoningEffort:    cfg.ReasoningEffort,
+		ReasoningEnforced:  outcome.ReasoningEnforced,
+		ReasoningNote:      outcome.ReasoningNote,
+		Budget:             budget,
+		Passed:             passed,
+		RateLimited:        rateLimited,
+		AgentStatus:        agentStatus,
 		Turns:              outcome.Turns,
-		WallTimeMS:         outcome.WallTimeMS,
+		WallTimeMS:         extWallMS,
+		InternalWallTimeMS: outcome.InternalWallTimeMS,
 		InputTokens:        outcome.InputTokens,
 		CachedInputTokens:  outcome.CachedInputTokens,
 		OutputTokens:       outcome.OutputTokens,
@@ -186,6 +289,20 @@ func runOne(ctx context.Context, tool string, orderIdx int, task Task, cfg RunCo
 		AcceptanceExitCode: accExit,
 		Error:              errStr,
 	}
+}
+
+func defaultBudgetForTool(tool string, cfg RunConfig) BudgetSpec {
+	b := BudgetSpec{
+		TimeoutMS:       cfg.Timeout.Milliseconds(),
+		TimeoutEnforced: cfg.Timeout > 0,
+	}
+	if tool == "pu" {
+		b.MaxCostUSD = cfg.MaxCostUSD
+		b.MaxTurns = cfg.MaxTurns
+		b.CostCapEnforced = cfg.MaxCostUSD > 0
+		b.TurnCapEnforced = cfg.MaxTurns > 0
+	}
+	return b
 }
 
 func createWorktree(repoDir, commit string) (string, func(), error) {
@@ -266,12 +383,17 @@ func runPu(ctx context.Context, worktreeDir string, task Task, cfg RunConfig) Ag
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
+	// External wall time: process start to exit.
 	start := time.Now()
 	err := cmd.Run()
-	elapsed := time.Since(start).Milliseconds()
+	extElapsed := time.Since(start).Milliseconds()
+
+	combinedErrText := stderr.String() + "\n" + stdout.String()
+	budget := defaultBudgetForTool("pu", cfg)
 
 	var rep struct {
 		Status          string  `json:"status"`
+		Reason          string  `json:"reason"`
 		Turns           int     `json:"turns"`
 		WallTimeMS      int64   `json:"wall_time_ms"`
 		NotionalCostUSD float64 `json:"notional_cost_usd"`
@@ -282,43 +404,73 @@ func runPu(ctx context.Context, worktreeDir string, task Task, cfg RunConfig) Ag
 		} `json:"tokens"`
 	}
 	if jErr := json.Unmarshal(stdout.Bytes(), &rep); jErr == nil && rep.Status != "" {
-		wt := rep.WallTimeMS
-		if wt == 0 {
-			wt = elapsed
+		rateLimited := IsRateLimited(rep.Reason) || IsRateLimited(stderr.String())
+		status := rep.Status
+		if rateLimited {
+			status = "rate_limited"
 		}
 		return AgentOutcome{
-			Status:            rep.Status,
-			Turns:             rep.Turns,
-			WallTimeMS:        wt,
-			InputTokens:       rep.Tokens.InputTokens,
-			CachedInputTokens: rep.Tokens.CachedInputTokens,
-			OutputTokens:      rep.Tokens.OutputTokens,
-			NotionalCostUSD:   rep.NotionalCostUSD,
-			Err:               err,
+			Status:             status,
+			Turns:              rep.Turns,
+			WallTimeMS:         extElapsed,     // external process wall time
+			InternalWallTimeMS: rep.WallTimeMS, // pu self-reported wall time kept separate
+			InputTokens:        rep.Tokens.InputTokens,
+			CachedInputTokens:  rep.Tokens.CachedInputTokens,
+			OutputTokens:       rep.Tokens.OutputTokens,
+			NotionalCostUSD:    rep.NotionalCostUSD,
+			RateLimited:        rateLimited,
+			ReasoningEnforced:  cfg.ReasoningEffort != "",
+			Budget:             budget,
+			Err:                err,
 		}
 	}
 
+	rateLimited := IsRateLimited(combinedErrText)
 	status := "failed"
 	if err == nil {
 		status = "completed"
+	}
+	if rateLimited {
+		status = "rate_limited"
 	}
 	if err != nil && stderr.Len() > 0 {
 		err = fmt.Errorf("%w: %s", err, strings.TrimSpace(stderr.String()))
 	}
 	return AgentOutcome{
-		Status:     status,
-		WallTimeMS: elapsed,
-		Err:        err,
+		Status:            status,
+		WallTimeMS:        extElapsed,
+		RateLimited:       rateLimited,
+		ReasoningEnforced: cfg.ReasoningEffort != "",
+		Budget:            budget,
+		Err:               err,
 	}
 }
 
 // runJcode is the jcode 1.0 adapter built from `jcode run --help`.
-// Invokes: jcode run --json -p opencode-go -m <model> -C <worktree> --no-update --no-selfdev --quiet <prompt>
+// Each invocation runs with an isolated, fresh JCODE_HOME + XDG config/data/cache
+// directory so no memory, sessions, or state carry between tasks.
 func runJcode(ctx context.Context, worktreeDir string, task Task, cfg RunConfig) AgentOutcome {
 	jcodeBin := cfg.JcodeBin
 	if jcodeBin == "" {
 		jcodeBin = "jcode"
 	}
+
+	budget := defaultBudgetForTool("jcode", cfg)
+	isoHome, err := os.MkdirTemp("", "pu-eval-jcode-home-*")
+	if err != nil {
+		return AgentOutcome{Status: "setup_error", Budget: budget, Err: fmt.Errorf("create isolated jcode home: %w", err)}
+	}
+	defer os.RemoveAll(isoHome)
+
+	// Write minimal isolated config.toml disabling memory sidecar and setting
+	// openai_reasoning_effort as best-effort parity (jcode run has no CLI effort flag).
+	var conf strings.Builder
+	conf.WriteString("[agents]\nmemory_sidecar_enabled = false\n")
+	if cfg.ReasoningEffort != "" {
+		fmt.Fprintf(&conf, "\n[provider]\nopenai_reasoning_effort = %q\n", cfg.ReasoningEffort)
+	}
+	_ = os.WriteFile(filepath.Join(isoHome, "config.toml"), []byte(conf.String()), 0o644)
+
 	args := []string{
 		"run",
 		"--json",
@@ -335,24 +487,38 @@ func runJcode(ctx context.Context, worktreeDir string, task Task, cfg RunConfig)
 
 	cmd := osexec.CommandContext(ctx, jcodeBin, args...)
 	cmd.Dir = worktreeDir
+	cmd.Env = isolatedJcodeEnv(os.Environ(), isoHome)
+
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
+	// External wall time: process start to exit.
 	start := time.Now()
-	err := cmd.Run()
-	elapsed := time.Since(start).Milliseconds()
+	runErr := cmd.Run()
+	extElapsed := time.Since(start).Milliseconds()
 
+	combinedErr := stderr.String() + "\n" + stdout.String()
+	rateLimited := IsRateLimited(combinedErr)
+
+	reasoningNote := "jcode run has no CLI reasoning-effort flag; wrote openai_reasoning_effort in isolated JCODE_HOME/config.toml (unverified for opencode-go)"
 	out := AgentOutcome{
-		Status:     "completed",
-		WallTimeMS: elapsed,
-		Err:        err,
+		Status:            "completed",
+		WallTimeMS:        extElapsed,
+		RateLimited:       rateLimited,
+		ReasoningEnforced: false,
+		ReasoningNote:     reasoningNote,
+		Budget:            budget,
+		Err:               runErr,
 	}
-	if err != nil {
+	if runErr != nil {
 		out.Status = "failed"
 		if stderr.Len() > 0 {
-			out.Err = fmt.Errorf("%w: %s", err, strings.TrimSpace(stderr.String()))
+			out.Err = fmt.Errorf("%w: %s", runErr, strings.TrimSpace(stderr.String()))
 		}
+	}
+	if rateLimited {
+		out.Status = "rate_limited"
 	}
 
 	// Best-effort parse of jcode --json output for token/cost metrics if present.
@@ -379,6 +545,41 @@ func runJcode(ctx context.Context, worktreeDir string, task Task, cfg RunConfig)
 				out.NotionalCostUSD = m.ComputeCostUSD(out.InputTokens, out.CachedInputTokens, out.OutputTokens)
 			}
 		}
+	}
+	return out
+}
+
+func isolatedJcodeEnv(baseEnv []string, isoHome string) []string {
+	overrides := map[string]string{
+		"JCODE_HOME":         isoHome,
+		"XDG_CONFIG_HOME":    filepath.Join(isoHome, "config"),
+		"XDG_DATA_HOME":      filepath.Join(isoHome, "data"),
+		"XDG_CACHE_HOME":     filepath.Join(isoHome, "cache"),
+		"JCODE_NO_TELEMETRY": "1",
+	}
+	var opencodeKey, opencodeGoKey string
+	out := make([]string, 0, len(baseEnv)+len(overrides)+1)
+	for _, kv := range baseEnv {
+		k, v, ok := strings.Cut(kv, "=")
+		if !ok {
+			continue
+		}
+		if k == "OPENCODE_API_KEY" {
+			opencodeKey = v
+		}
+		if k == "OPENCODE_GO_API_KEY" {
+			opencodeGoKey = v
+		}
+		if _, replaced := overrides[k]; replaced {
+			continue
+		}
+		out = append(out, kv)
+	}
+	if opencodeGoKey == "" && opencodeKey != "" {
+		overrides["OPENCODE_GO_API_KEY"] = opencodeKey
+	}
+	for k, v := range overrides {
+		out = append(out, k+"="+v)
 	}
 	return out
 }
