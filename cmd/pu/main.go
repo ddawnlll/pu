@@ -12,6 +12,7 @@ import (
 
 	"github.com/ddawnlll/pu/internal/catalog"
 	"github.com/ddawnlll/pu/internal/core"
+	"github.com/ddawnlll/pu/internal/edit"
 	"github.com/ddawnlll/pu/internal/provider"
 )
 
@@ -33,11 +34,9 @@ func runCLI(args []string, stdout, stderr io.Writer) int {
 	case "run":
 		return runAgent(args[1:], stdout, stderr)
 	case "diff":
-		fmt.Fprintln(stderr, "pu diff: not implemented yet (lands in M3)")
-		return 2
+		return runDiff(args[1:], stdout, stderr)
 	case "undo":
-		fmt.Fprintln(stderr, "pu undo: not implemented yet (lands in M3)")
-		return 2
+		return runUndo(args[1:], stdout, stderr)
 	case "version", "--version", "-v":
 		fmt.Fprintf(stdout, "pu %s\n", version)
 		return 0
@@ -56,8 +55,8 @@ func printUsage(w io.Writer) {
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, "Subcommands:")
 	fmt.Fprintln(w, "  run      Run headless coding task")
-	fmt.Fprintln(w, "  diff     Show summary of session changes (lands in M3)")
-	fmt.Fprintln(w, "  undo     Restore session checkpoints (lands in M3)")
+	fmt.Fprintln(w, "  diff     Show summary of session changes")
+	fmt.Fprintln(w, "  undo     Restore session checkpoints")
 	fmt.Fprintln(w, "  doctor   Check Go version, models.toml, API keys, rg, and env-scrub")
 	fmt.Fprintln(w, "  version  Print pu version")
 }
@@ -152,6 +151,50 @@ func runAgent(args []string, stdout, stderr io.Writer) int {
 	}
 	if report != nil && report.Status != core.StatusCompleted {
 		return 1
+	}
+	return 0
+}
+
+func runDiff(args []string, stdout, stderr io.Writer) int {
+	fs := flag.NewFlagSet("diff", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	sessionID := fs.String("session", "", "session ID (defaults to latest checkpointed session)")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	cwd, err := os.Getwd()
+	if err != nil {
+		fmt.Fprintf(stderr, "pu diff: %v\n", err)
+		return 1
+	}
+	out, err := edit.DiffSession(cwd, *sessionID)
+	if err != nil {
+		fmt.Fprintf(stderr, "pu diff: %v\n", err)
+		return 1
+	}
+	fmt.Fprint(stdout, out)
+	return 0
+}
+
+func runUndo(args []string, stdout, stderr io.Writer) int {
+	fs := flag.NewFlagSet("undo", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	sessionID := fs.String("session", "", "session ID (defaults to latest checkpointed session)")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	cwd, err := os.Getwd()
+	if err != nil {
+		fmt.Fprintf(stderr, "pu undo: %v\n", err)
+		return 1
+	}
+	actions, err := edit.UndoSession(cwd, *sessionID)
+	if err != nil {
+		fmt.Fprintf(stderr, "pu undo: %v\n", err)
+		return 1
+	}
+	for _, a := range actions {
+		fmt.Fprintln(stdout, a)
 	}
 	return 0
 }
