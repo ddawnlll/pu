@@ -11,6 +11,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/ddawnlll/pu/internal/catalog"
 )
 
 // Result is one line appended to results.jsonl.
@@ -369,6 +371,13 @@ func runJcode(ctx context.Context, worktreeDir string, task Task, cfg RunConfig)
 		}
 		if t := intFromAny(jResp["turns"]); t > 0 {
 			out.Turns = t
+		}
+	}
+	if out.NotionalCostUSD == 0 && (out.InputTokens > 0 || out.OutputTokens > 0) && cfg.ModelsFile != "" {
+		if cat, cErr := catalog.Load(cfg.ModelsFile); cErr == nil {
+			if m, mErr := cat.Model(cfg.Model); mErr == nil {
+				out.NotionalCostUSD = m.ComputeCostUSD(out.InputTokens, out.CachedInputTokens, out.OutputTokens)
+			}
 		}
 	}
 	return out

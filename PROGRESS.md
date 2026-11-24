@@ -1,6 +1,6 @@
 # pu — Progress
 
-Current milestone: **M5 — Eval harness** (M1–M4 merged to `main`)
+Current milestone: **P0 Complete (M1–M5 merged to `main`)** — ready for the 30-task pilot
 
 ## M3 Checklist — Edit and undo (Merged)
 
@@ -38,16 +38,16 @@ Current milestone: **M5 — Eval harness** (M1–M4 merged to `main`)
 - [x] Compaction at 75% and 85% loses nothing from `events.jsonl` (`TestCompaction75And85PreservesEventsJSONL`)
 - [x] `go vet ./...`, `go test ./...`, and `CGO_ENABLED=0` release build pass (7.3 MiB)
 
-## M5 Checklist — Eval harness
+## M5 Checklist — Eval harness (Merged)
 
-- [ ] `eval/`: task schema (`task.toml`: repo, commit, prompt, acceptance command, category), clean `git worktree` per run, alternating order (odd `jcode -> pu`, even `pu -> jcode`), same model/budget/timeout, append metrics to `results.jsonl`
-- [ ] `eval/`: report generator (success rates, median wall time, median notional cost & raw tokens per successful task, spec §12 Go/No-Go verdict)
-- [ ] `cmd/pu run`: hidden `--ablate=turn0,hashline,pinned-prefix,staged` switch
-- [ ] `eval/`: 3 sample tasks on a small toy repo + dry run producing `results.jsonl` and report (plus jcode adapter checked against `jcode --help` if installed)
+- [x] `eval/`: task schema (`task.toml`: repo, commit, prompt, acceptance command, category), clean `git worktree` per run, alternating order (odd `jcode -> pu`, even `pu -> jcode`), same model/budget/timeout, append metrics to `results.jsonl`
+- [x] `eval/`: report generator (success rates, median wall time, median notional cost & raw tokens per successful task, spec §12 Go/No-Go verdict)
+- [x] `cmd/pu run`: hidden `--ablate=turn0,hashline,pinned-prefix,staged` switch
+- [x] `eval/`: 3 sample tasks on a small toy repo (`eval/sample_tasks/`) + live dry run producing `results.jsonl` and report for both `pu` and `jcode`
 
 ### M5 Done-when gates
-- [ ] Dry run produces `results.jsonl` and report for `pu` (and `jcode` if installed)
-- [ ] `go vet ./...`, `go test ./...`, and `CGO_ENABLED=0` release build pass
+- [x] Dry run produces `results.jsonl` and report for `pu` (3/3 pass, median 21.2s, $0.000937 notional) and `jcode` (3/3 pass, median 73.8s)
+- [x] `go vet ./...`, `go test ./...`, and `CGO_ENABLED=0` release build pass (7.3 MiB)
 
 ## Completed Milestones
 
@@ -68,6 +68,11 @@ Current milestone: **M5 — Eval harness** (M1–M4 merged to `main`)
 - Built `internal/exec/run.go` (pipe `Run`, `Setpgid`, scrubbed env, 64 KiB cap, SIGTERM -> 300ms -> SIGKILL teardown), `internal/edit` post-`exec` `CheckExternalMutations`, `internal/plan` (`.pu/plan.json` mirror + revision-stale evidence), `internal/core/compaction.go` (75% soft trim + 85% clean state handoff), untrusted external-content gate, open-step continuations (max 2 then `failed`), and `cmd/pu run` signal/flag wiring.
 - Gates: `go vet ./...` PASS; `go test -v ./...` PASS (`TestExecChildEnvContainsNoKeys`, `TestExecCancelLeavesNoOrphanProcesses`, `TestExecModifiedFileStalesEarlierEvidence`, `TestUntrustedGateHeadlessVsLocal`, `TestOpenStepContinuationsThenFailed`, `TestCompaction75And85PreservesEventsJSONL`, `TestBudgetExhausted`); `CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o pu ./cmd/pu` PASS (7.3 MiB).
 
+### M5 — Eval harness (merged)
+- Built `eval/` (`task.go`, `runner.go`, `report.go`, `eval_test.go`, `eval/cmd/pu-eval/main.go`) with clean `git worktree` isolation, odd/even alternating order (`jcode -> pu` vs `pu -> jcode`), `pu` and `jcode` adapters (`jcode run --json -p opencode-go -m <model> -C <worktree> --no-update --no-selfdev --quiet`), apples-to-apples notional cost calculation from `models.toml` when `jcode` omits `cost_usd`, spec §12 Go/No-Go report, hidden `--ablate=turn0,hashline,pinned-prefix,staged` switch, and 3 sample tasks on nested toy module `eval/sample_tasks/toyrepo/`.
+- Gates: `go vet ./...` PASS; `go test ./...` PASS (`TestAlternatingToolOrder`, `TestSummarizeGoNoGoVerdict`, `TestDryRunWorktreesAlternatingAndResultsJSONL`); `CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o pu ./cmd/pu` PASS (7.3 MiB).
+- Live 3-task dry run (`deepseek-v4.1-flash`, `reasoning_effort=low`): `pu` 3/3 (100.0%, median wall 21,231 ms, median notional cost $0.000937, median tokens 8416/3840/399); `jcode` 3/3 (100.0%, median wall 73,756 ms, median tokens 12637/12416/111).
+
 ## Decisions
 
 - **OpenCode Go endpoint path & session header**: Chat-completions models (including pilot model `deepseek-v4.1-flash`) use `https://opencode.ai/inference/go/openai/v1`, `reasoning_content`, and require `x-opencode-session` (`provider.Request.SessionID`).
@@ -78,6 +83,8 @@ Current milestone: **M5 — Eval harness** (M1–M4 merged to `main`)
 - **Anchored read & revision table location**: 5-letter lowercase ASCII anchors (`[a-z]{5}`, unique per file even for identical lines) and SHA-256 revision tracking live in `internal/edit` so `read` and `patch` share one source of truth.
 - **Layer 3 project rules order**: `AGENTS.md`, then `PU.md` (read once at session start, never mutated mid-session).
 - **Output spill threshold**: Tool outputs > 64 KiB spill to `.pu/sessions/<id>/out/<call_id>.txt`.
+- **jcode eval adapter & notional cost**: Verified `jcode run --help` on installed `jcode`; adapter invokes `jcode run --json -p opencode-go -m <model> -C <worktree> --no-update --no-selfdev --quiet`. When `jcode` reports raw tokens without `cost_usd`, `eval/runner.go` computes notional list-price cost from `models.toml` using the exact same formula as `pu`.
+- **Nested toyrepo module**: `eval/sample_tasks/toyrepo/` has its own `go.mod` so intentionally failing sample tests never interfere with root `go test ./...`.
 
 ## Open questions
 
