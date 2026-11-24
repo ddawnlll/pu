@@ -137,6 +137,40 @@ Current milestone: **P0 Complete (M1–M5 merged to `main`)** — ready for the 
 - **Concurrency & scoring (`eval/runner.go`, `eval/cmd/pu-eval/main.go`):** Run `pu` and `jcode` concurrently per task in separate git worktrees, with `--parallel 2` (max 2 tasks in parallel = 4 concurrent processes), preserving `order_index` in `results.jsonl`. Acceptance pass alone determines `passed` (excluding `rate_limited` and `setup_error`), and any `rate_limited` run halts scheduling of remaining tasks. Verified with `TestConcurrentTwoTasksTwoTools`.
 - Gates: `go vet ./...` PASS; `go test ./...` PASS; release build PASS.
 
+### Pilot v1 Phase 2 — Frozen `pu` Changes (merged)
+- **Frozen `pu` commit:** `1c72639` (merged to `main` at `39e1bd1`; binary rebuilt with `CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o pu ./cmd/pu`, 7.3 MiB). No `pu` code changes allowed during Pilot v1.
+- **Changes:**
+  1. Immediate completion on green targeted check (`internal/core/loop.go`, `internal/core/system.txt`): once a file has been modified, a targeted verification `exec` passes (`exitCode == 0`, `Validity == "current"`), and `planMgr.OpenSteps()` is empty, `pu` completes immediately instead of running extra redundant checks (`TestEarlyCompleteOnGreenCheckWithNoOpenSteps`).
+  2. 2s internal timeout cushion (`internal/core/loop.go`): when `cfg.Timeout > 4s`, `runCtx` expires 2s before `--timeout` so `pu` always finishes cleanly and flushes its JSON report.
+- **Verification (unit tests + `eval/sample_tasks` ONLY; never run on pilot tasks):** `go vet ./...` PASS; `go test ./...` PASS; `eval/sample_tasks` `pu` 3/3 (100.0%, 0 timeouts, median wall 12.2s, median notional $0.000628).
+
+## Pilot v1 results (30/30 paired tasks — valid)
+
+- **Run configuration:** All 30 frozen tasks in `eval/pilot_tasks` (`SELECTION.md`), frozen `pu` commit `1c72639` (`39e1bd1` on `main`), `deepseek-v4.1-flash` on OpenCode Go, `provider_default` reasoning for both tools, `--timeout 15m` (`harness_timeout_ms = 930000`, `SIGINT -> 10s -> SIGKILL`), `--max-turns 40`, `--max-cost-usd 0.50` (`pu` only; `jcode` has no CLI cost/turn cap), `--parallel 2` (2 tasks × 2 tools concurrent in separate worktrees), pre-seeded isolated `JCODE_HOME` + `stdin=/dev/null`. Raw results in `eval/pilot_v1_results.jsonl` (63 lines: 60 valid paired runs + 3 transient `rate_limited` runs retried via `--resume`).
+- **What changed between v0 and v1:**
+  - Tool timeout increased from `3m` (where 16/21 runs timed out) to `15m` (`harness_timeout = 15m30s`, `SIGINT -> 10s -> SIGKILL`).
+  - `pu` max turns increased from `20` to `40`; `pu` gained a 2s internal timeout cushion and immediate completion on passing targeted checks (`1c72639`).
+  - Harness runs `pu` and `jcode` concurrently per task (max 2 tasks in parallel = 4 processes), tracks `timed_out` separately, and scores `passed` strictly by acceptance exit code.
+- **Timeout parity check:** Verified across all 60 valid runs in `eval/pilot_v1_results.jsonl`: both `pu` and `jcode` ran with `timeout_ms = 900000` (15m) and `harness_timeout_ms = 930000` (15m30s).
+- **Headline metrics (30/30 paired tasks):**
+  - `pu`: **22/30 (73.3%)** pass, **0 timeouts**, median wall **83,307 ms** (83.3s), median notional cost **$0.006239** (median tokens: 130,529 in / 103,872 cached / 3,990 out).
+  - `jcode`: **29/30 (96.7%)** pass, **0 timeouts**, median wall **242,647 ms** (242.6s), median notional cost **$0.011584** (median tokens: 490,506 in / 455,552 cached / 6,527 out).
+  - Efficiency on passing tasks: `pu` median wall time **65.7% faster** (2.9x), median notional cost **46.1% lower** (1.86x).
+- **Spec §12 Go/No-Go verdict (30/30 paired >= 25 threshold):** **NO-GO** — `pu` success rate **73.3% < `jcode` 96.7%** (despite beating the 15% wall-time and cost thresholds by wide margins on passing tasks).
+- **Per-category breakdown:**
+  - `bugfix` (10 paired): `pu` **8/10 (80.0%)**, 0 timeouts, med wall 191.8s, med cost $0.007747 | `jcode` **10/10 (100.0%)**, 0 timeouts, med wall 268.7s, med cost $0.012004.
+  - `feature_refactor` (10 paired): `pu` **5/10 (50.0%)**, 0 timeouts, med wall 80.3s, med cost $0.008087 | `jcode` **10/10 (100.0%)**, 0 timeouts, med wall 247.9s, med cost $0.011849.
+  - `test_build` (5 paired): `pu` **4/5 (80.0%)**, 0 timeouts, med wall 53.4s, med cost $0.003753 | `jcode` **4/5 (80.0%)**, 0 timeouts, med wall 125.7s, med cost $0.007501.
+  - `no_change` (3 paired): `pu` **3/3 (100.0%)**, 0 timeouts, med wall 69.4s, med cost $0.004098 | `jcode` **3/3 (100.0%)**, 0 timeouts, med wall 154.5s, med cost $0.014227.
+  - `large_file` (2 paired): `pu` **2/2 (100.0%)**, 0 timeouts, med wall 95.0s, med cost $0.005199 | `jcode` **2/2 (100.0%)**, 0 timeouts, med wall 137.4s, med cost $0.009198.
+- **Rate-limited and invalid runs:** **3** transient `rate_limited` runs (`08_gjson_uint_overflow` `pu` ×1, `17_cobra_default_comp` `pu` ×2 during 4-way concurrency bursts; excluded from metrics and retried to completion via `--resume`), **0** `setup_error`/invalid runs.
+- **Top 5 tasks with the biggest gap:**
+  1. `04_lipgloss_tree_offset` (`jcode` win, correctness): `pu` stopped at turn 7 (48.7s) after Phase 2 early-completion fired on an intermediate passing `go test` before edge cases were fixed, while `jcode` passed in 214.0s.
+  2. `11_tetik2_recall_lessons` (`jcode` win, correctness): `pu` terminated early at turn 15 (176.1s) on a partial multi-file edit whose existing tests still passed, while `jcode` completed all files and passed in 318.6s.
+  3. `21_serde_json_f64_warn` (`jcode` win, correctness): `pu` stopped at turn 10 (131.9s) after a plain `cargo test` passed without `-D warnings`, while `jcode` ran `RUSTFLAGS='-D warnings'` and passed in 248.8s.
+  4. `22_tetik_xtask_archive` (`pu` win, correctness + speed): `pu` passed in 59.6s / 8 turns / $0.00454 while `jcode` failed in 97.4s / 15 turns / $0.00791.
+  5. `02_lipgloss_tree_nil` (`pu` win, speed + cost): both passed, with `pu` finishing 303.6s faster (158.9s vs 462.5s) and 31% cheaper ($0.01525 vs $0.02221); similarly `28_gjson_no_change_path` (`pu` 117.7s / $0.00829 vs `jcode` 420.4s / $0.03222, 3.6x faster and 3.9x cheaper).
+
 ## Decisions
 
 - **OpenCode Go endpoint path & session header**: Chat-completions models (including pilot model `deepseek-v4.1-flash`) use `https://opencode.ai/inference/go/openai/v1`, `reasoning_content`, and require `x-opencode-session` (`provider.Request.SessionID`).
@@ -152,7 +186,6 @@ Current milestone: **P0 Complete (M1–M5 merged to `main`)** — ready for the 
 
 ## Open questions
 
-- **Pilot completion (`--resume` tasks 11–30):** 21/60 runs (tasks 01–10 paired + task 11 `jcode`) finished before the 17:10 Istanbul wrap-up deadline; resume with `pu-eval --resume --tasks eval/pilot_tasks --out eval/pilot_results.jsonl --timeout 5m` (consider 5m timeout because under `provider_default` full thinking on OpenCode Go, 9/11 `jcode` runs and 8/10 `pu` runs hit the 3m cap).
-- **pu improvement idea — graceful shutdown cushion before harness `SIGKILL`:** On `03_lipgloss_alpha_enum`, `05_lipgloss_unset_underline`, and `07_gjson_uint_20byte`, `pu` was killed by `exec.CommandContext` at 180s before its own `--timeout 3m` flushed the JSON report (`turns=0`, `$0` recorded). Give `pu` a 2s internal deadline cushion (or have `pu-eval` send `SIGINT` before `SIGKILL`) so partial turn/token telemetry is always preserved.
-- **pu improvement idea — stop earlier once targeted tests pass:** On `01_lipgloss_table_nil`, `02_lipgloss_tree_nil`, and `09_serde_json_f32_eq`, `pu` fixed the bug (passing acceptance) but kept running extra turns/checks until the 180s timeout (`budget_exhausted`). Tightening completion behavior after green targeted tests should cut median wall time and notional cost further.
-- **OpenCode Go 5-hour / weekly usage limits during 30-task pilot:** Handled via `rate_limited` classification + `pu-eval --resume` (0 rate-limited runs observed across the first 21 runs).
+- **Root cause of Pilot v1 `NO-GO` (73.3% vs 96.7%) — Phase 2 hard early-completion fired prematurely:** In `internal/core/loop.go` (`1c72639`), hard-terminating the loop after *any* passing verification `exec` whenever `len(planMgr.OpenSteps()) == 0` cut off multi-file `feature_refactor` runs (5/10) and partial-fix `bugfix`/`test_build` runs (`04`, `11`, `12`, `13`, `17`, `21`) as soon as an intermediate `go test` / `cargo test` passed existing tests before all required edits or new tests were written. Fix for v2: remove the hard programmatic kill (or only allow it when an explicit `plan` exists and all steps were marked `done`), and rely on the system prompt guidance instead.
+- **Transient 429 burst handling during 4-way concurrency:** 3 `pu` runs hit transient HTTP 429s under 4 concurrent OpenCode Go streams; adding exponential backoff retry on HTTP 429 inside `internal/provider` (while still classifying hard quota exhaustion as `rate_limited`) would prevent mid-run aborts.
+- **Next step:** Revert/soften hard early-completion on a new branch, verify on unit tests + `eval/sample_tasks`, and run Pilot v2 to check whether `pu` closes the 73.3% -> 96.7% success gap while retaining its 2.9x speed and 1.86x cost advantage.
