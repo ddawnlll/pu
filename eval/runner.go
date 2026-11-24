@@ -14,6 +14,9 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
+	"syscall"
 	"time"
 
 	"github.com/ddawnlll/pu/internal/catalog"
@@ -21,12 +24,13 @@ import (
 
 // BudgetSpec records the budget limits configured and actually enforced for a run.
 type BudgetSpec struct {
-	MaxCostUSD      float64 `json:"max_cost_usd,omitempty"`
-	MaxTurns        int     `json:"max_turns,omitempty"`
-	TimeoutMS       int64   `json:"timeout_ms,omitempty"`
-	CostCapEnforced bool    `json:"cost_cap_enforced"`
-	TurnCapEnforced bool    `json:"turn_cap_enforced"`
-	TimeoutEnforced bool    `json:"timeout_enforced"`
+	MaxCostUSD       float64 `json:"max_cost_usd,omitempty"`
+	MaxTurns         int     `json:"max_turns,omitempty"`
+	TimeoutMS        int64   `json:"timeout_ms,omitempty"`
+	HarnessTimeoutMS int64   `json:"harness_timeout_ms,omitempty"`
+	CostCapEnforced  bool    `json:"cost_cap_enforced"`
+	TurnCapEnforced  bool    `json:"turn_cap_enforced"`
+	TimeoutEnforced  bool    `json:"timeout_enforced"`
 }
 
 // Result is one line appended to results.jsonl.
@@ -42,6 +46,7 @@ type Result struct {
 	ReasoningNote      string     `json:"reasoning_note,omitempty"`
 	Budget             BudgetSpec `json:"budget"`
 	Passed             bool       `json:"passed"`
+	TimedOut           bool       `json:"timed_out,omitempty"`
 	RateLimited        bool       `json:"rate_limited,omitempty"`
 	AgentStatus        string     `json:"agent_status"`
 	Turns              int        `json:"turns"`
@@ -65,6 +70,7 @@ type AgentOutcome struct {
 	CachedInputTokens  int
 	OutputTokens       int
 	NotionalCostUSD    float64
+	TimedOut           bool
 	RateLimited        bool
 	ReasoningEnforced  bool
 	ReasoningNote      string
@@ -82,16 +88,19 @@ type RunConfig struct {
 	Model           string
 	ModelsFile      string
 	ReasoningEffort string
-	MaxCostUSD      float64
-	MaxTurns        int
-	Timeout         time.Duration
-	PuBin             string
-	JcodeBin          string
-	JcodeTemplateHome string   // optional pre-seeded JCODE_HOME template copied per run
-	Tools             []string // e.g. ["pu", "jcode"] or ["pu"]
-	Ablate          string
-	Resume          bool        // skip (task_id, tool) already completed (non-rate_limited) in ResultsPath
-	Runner          AgentRunner // optional override for tests
+	MaxCostUSD          float64
+	MaxTurns            int
+	Timeout             time.Duration // tool timeout
+	HarnessTimeoutExtra time.Duration // extra grace added on top of Timeout (default 30s)
+	SigintGrace         time.Duration // wait between SIGINT and SIGKILL on timeout (default 10s)
+	MaxParallelTasks    int           // max tasks run concurrently (default 2; each task runs tools concurrently)
+	PuBin               string
+	JcodeBin            string
+	JcodeTemplateHome   string   // optional pre-seeded JCODE_HOME template copied per run
+	Tools               []string // e.g. ["pu", "jcode"] or ["pu"]
+	Ablate              string
+	Resume              bool        // skip (task_id, tool) already completed (non-rate_limited) in ResultsPath
+	Runner              AgentRunner // optional override for tests
 }
 
 // ToolOrder returns the spec §12 alternating execution order for a 1-based task
@@ -166,6 +175,15 @@ func RunAll(ctx context.Context, cfg RunConfig) ([]Result, error) {
 	if cfg.Timeout <= 0 {
 		cfg.Timeout = 5 * time.Minute
 	}
+	if cfg.HarnessTimeoutExtra <= 0 {
+		cfg.HarnessTimeoutExtra = 30 * time.Second
+	}
+	if cfg.SigintGrace <= 0 {
+		cfg.SigintGrace = 10 * time.Second
+	}
+	if cfg.MaxParallelTasks <= 0 {
+		cfg.MaxParallelTasks = 2
+	}
 	if cfg.ReasoningEffort == "" {
 		cfg.ReasoningEffort = "provider_default"
 	}
@@ -209,22 +227,70 @@ func RunAll(ctx context.Context, cfg RunConfig) ([]Result, error) {
 	}
 	defer resFile.Close()
 
-	var all []Result
+	var (
+		mu       sync.Mutex
+		all      []Result
+		quotaHit atomic.Bool
+		taskWG   sync.WaitGroup
+	)
+	sem := make(chan struct{}, cfg.MaxParallelTasks)
+
 	for idx, task := range tasks {
+		if quotaHit.Load() || ctx.Err() != nil {
+			break
+		}
 		order := ToolOrder(idx+1, cfg.Tools)
+		pendingTools := make([]struct {
+			tool     string
+			orderIdx int
+		}, 0, len(order))
 		for orderPos, tool := range order {
 			if cfg.Resume && completedKeys[task.ID+"\x00"+tool] {
 				continue
 			}
-			res := runOne(ctx, tool, orderPos+1, task, cfg)
-			all = append(all, res)
-
-			line, mErr := json.Marshal(res)
-			if mErr == nil {
-				_, _ = resFile.Write(append(line, '\n'))
-			}
+			pendingTools = append(pendingTools, struct {
+				tool     string
+				orderIdx int
+			}{tool: tool, orderIdx: orderPos + 1})
 		}
+		if len(pendingTools) == 0 {
+			continue
+		}
+
+		sem <- struct{}{}
+		taskWG.Add(1)
+		go func(t Task, toolsToRun []struct {
+			tool     string
+			orderIdx int
+		}) {
+			defer taskWG.Done()
+			defer func() { <-sem }()
+
+			// Run pu and jcode concurrently in separate worktrees for the same task.
+			var toolWG sync.WaitGroup
+			for _, item := range toolsToRun {
+				if quotaHit.Load() || ctx.Err() != nil {
+					continue
+				}
+				toolWG.Add(1)
+				go func(tool string, orderIdx int) {
+					defer toolWG.Done()
+					res := runOne(ctx, tool, orderIdx, t, cfg)
+					if res.RateLimited {
+						quotaHit.Store(true)
+					}
+					mu.Lock()
+					all = append(all, res)
+					if line, mErr := json.Marshal(res); mErr == nil {
+						_, _ = resFile.Write(append(line, '\n'))
+					}
+					mu.Unlock()
+				}(item.tool, item.orderIdx)
+			}
+			toolWG.Wait()
+		}(task, pendingTools)
 	}
+	taskWG.Wait()
 	return all, nil
 }
 
@@ -248,7 +314,8 @@ func runOne(ctx context.Context, tool string, orderIdx int, task Task, cfg RunCo
 	}
 	defer cleanup()
 
-	runCtx, cancel := context.WithTimeout(ctx, cfg.Timeout)
+	harnessTimeout := cfg.Timeout + cfg.HarnessTimeoutExtra
+	runCtx, cancel := context.WithTimeout(ctx, harnessTimeout+cfg.SigintGrace+5*time.Second)
 	defer cancel()
 
 	// Measure external wall time consistently from process start to exit for both tools.
@@ -256,7 +323,7 @@ func runOne(ctx context.Context, tool string, orderIdx int, task Task, cfg RunCo
 	outcome := cfg.Runner(runCtx, tool, wtDir, task, cfg)
 	extWallMS := time.Since(extStart).Milliseconds()
 	if outcome.WallTimeMS > 0 {
-		// Allow adapters (which wrap cmd.Run() directly) or test fakes to provide exact process wall time.
+		// Allow adapters (which wrap cmd start->wait directly) or test fakes to provide exact process wall time.
 		extWallMS = outcome.WallTimeMS
 	}
 
@@ -274,9 +341,11 @@ func runOne(ctx context.Context, tool string, orderIdx int, task Task, cfg RunCo
 		agentStatus = "rate_limited"
 	}
 
+	// A run counts as successful iff the acceptance test passes, whatever status
+	// the agent reported (excluding rate_limited and setup_error).
 	accExit := -1
 	passed := false
-	if !rateLimited && agentStatus != "failed" && agentStatus != "setup_error" {
+	if !rateLimited && agentStatus != "setup_error" {
 		accExit = runAcceptance(ctx, wtDir, task.Acceptance)
 		passed = accExit == 0
 	}
@@ -293,6 +362,7 @@ func runOne(ctx context.Context, tool string, orderIdx int, task Task, cfg RunCo
 		ReasoningNote:      outcome.ReasoningNote,
 		Budget:             budget,
 		Passed:             passed,
+		TimedOut:           outcome.TimedOut,
 		RateLimited:        rateLimited,
 		AgentStatus:        agentStatus,
 		Turns:              outcome.Turns,
@@ -308,9 +378,14 @@ func runOne(ctx context.Context, tool string, orderIdx int, task Task, cfg RunCo
 }
 
 func defaultBudgetForTool(tool string, cfg RunConfig) BudgetSpec {
+	harnessExtra := cfg.HarnessTimeoutExtra
+	if harnessExtra <= 0 {
+		harnessExtra = 30 * time.Second
+	}
 	b := BudgetSpec{
-		TimeoutMS:       cfg.Timeout.Milliseconds(),
-		TimeoutEnforced: cfg.Timeout > 0,
+		TimeoutMS:        cfg.Timeout.Milliseconds(),
+		HarnessTimeoutMS: (cfg.Timeout + harnessExtra).Milliseconds(),
+		TimeoutEnforced:  cfg.Timeout > 0,
 	}
 	if tool == "pu" {
 		b.MaxCostUSD = cfg.MaxCostUSD
@@ -396,7 +471,7 @@ func runPu(ctx context.Context, worktreeDir string, task Task, cfg RunConfig) Ag
 	}
 	args = append(args, task.Prompt)
 
-	cmd := osexec.CommandContext(ctx, puBin, args...)
+	cmd := osexec.Command(puBin, args...)
 	cmd.Dir = worktreeDir
 	if devNull, nErr := os.Open(os.DevNull); nErr == nil {
 		cmd.Stdin = devNull
@@ -406,9 +481,11 @@ func runPu(ctx context.Context, worktreeDir string, task Task, cfg RunConfig) Ag
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
+	harnessTimeout, sigintGrace := effectiveTimeouts(cfg)
+
 	// External wall time: process start to exit.
 	start := time.Now()
-	err := cmd.Run()
+	harnessTimedOut, err := runCmdWithGracefulInterrupt(ctx, cmd, harnessTimeout, sigintGrace)
 	extElapsed := time.Since(start).Milliseconds()
 
 	combinedErrText := stderr.String() + "\n" + stdout.String()
@@ -428,6 +505,7 @@ func runPu(ctx context.Context, worktreeDir string, task Task, cfg RunConfig) Ag
 	}
 	if jErr := json.Unmarshal(stdout.Bytes(), &rep); jErr == nil && rep.Status != "" {
 		rateLimited := IsRateLimited(rep.Reason) || IsRateLimited(stderr.String())
+		timedOut := harnessTimedOut || strings.Contains(strings.ToLower(rep.Reason), "timeout")
 		status := rep.Status
 		if rateLimited {
 			status = "rate_limited"
@@ -441,6 +519,7 @@ func runPu(ctx context.Context, worktreeDir string, task Task, cfg RunConfig) Ag
 			CachedInputTokens:  rep.Tokens.CachedInputTokens,
 			OutputTokens:       rep.Tokens.OutputTokens,
 			NotionalCostUSD:    rep.NotionalCostUSD,
+			TimedOut:           timedOut,
 			RateLimited:        rateLimited,
 			ReasoningEnforced:  cfg.ReasoningEffort != "",
 			Budget:             budget,
@@ -462,6 +541,7 @@ func runPu(ctx context.Context, worktreeDir string, task Task, cfg RunConfig) Ag
 	return AgentOutcome{
 		Status:            status,
 		WallTimeMS:        extElapsed,
+		TimedOut:          harnessTimedOut,
 		RateLimited:       rateLimited,
 		ReasoningEnforced: cfg.ReasoningEffort != "",
 		Budget:            budget,
@@ -506,7 +586,7 @@ func runJcode(ctx context.Context, worktreeDir string, task Task, cfg RunConfig)
 	}
 	args = append(args, task.Prompt)
 
-	cmd := osexec.CommandContext(ctx, jcodeBin, args...)
+	cmd := osexec.Command(jcodeBin, args...)
 	cmd.Dir = worktreeDir
 	cmd.Env = isolatedJcodeEnv(os.Environ(), isoHome)
 	if devNull, nErr := os.Open(os.DevNull); nErr == nil {
@@ -518,9 +598,11 @@ func runJcode(ctx context.Context, worktreeDir string, task Task, cfg RunConfig)
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
+	harnessTimeout, sigintGrace := effectiveTimeouts(cfg)
+
 	// External wall time: process start to exit.
 	start := time.Now()
-	runErr := cmd.Run()
+	harnessTimedOut, runErr := runCmdWithGracefulInterrupt(ctx, cmd, harnessTimeout, sigintGrace)
 	extElapsed := time.Since(start).Milliseconds()
 
 	combinedErr := stderr.String() + "\n" + stdout.String()
@@ -534,6 +616,7 @@ func runJcode(ctx context.Context, worktreeDir string, task Task, cfg RunConfig)
 	out := AgentOutcome{
 		Status:            "completed",
 		WallTimeMS:        extElapsed,
+		TimedOut:          harnessTimedOut,
 		RateLimited:       rateLimited,
 		ReasoningEnforced: reasoningEnforced,
 		ReasoningNote:     reasoningNote,
@@ -837,6 +920,69 @@ func isolatedJcodeEnv(baseEnv []string, isoHome string) []string {
 		out = append(out, k+"="+v)
 	}
 	return out
+}
+
+func effectiveTimeouts(cfg RunConfig) (harnessTimeout, sigintGrace time.Duration) {
+	extra := cfg.HarnessTimeoutExtra
+	if extra <= 0 {
+		extra = 30 * time.Second
+	}
+	grace := cfg.SigintGrace
+	if grace <= 0 {
+		grace = 10 * time.Second
+	}
+	if cfg.Timeout > 0 {
+		harnessTimeout = cfg.Timeout + extra
+	}
+	return harnessTimeout, grace
+}
+
+// runCmdWithGracefulInterrupt starts cmd in its own process group. If
+// harnessTimeout expires (or ctx is canceled), it sends SIGINT to the process
+// group, waits up to sigintGrace for a clean exit (so pu can flush its JSON
+// report), and only then sends SIGKILL.
+func runCmdWithGracefulInterrupt(ctx context.Context, cmd *osexec.Cmd, harnessTimeout, sigintGrace time.Duration) (bool, error) {
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	if err := cmd.Start(); err != nil {
+		return false, err
+	}
+	done := make(chan error, 1)
+	go func() {
+		done <- cmd.Wait()
+	}()
+
+	var timerC <-chan time.Time
+	var timer *time.Timer
+	if harnessTimeout > 0 {
+		timer = time.NewTimer(harnessTimeout)
+		defer timer.Stop()
+		timerC = timer.C
+	}
+
+	select {
+	case err := <-done:
+		return false, err
+	case <-timerC:
+		pgid := cmd.Process.Pid
+		_ = syscall.Kill(-pgid, syscall.SIGINT)
+		select {
+		case err := <-done:
+			return true, err
+		case <-time.After(sigintGrace):
+			_ = syscall.Kill(-pgid, syscall.SIGKILL)
+			return true, <-done
+		}
+	case <-ctx.Done():
+		pgid := cmd.Process.Pid
+		_ = syscall.Kill(-pgid, syscall.SIGINT)
+		select {
+		case err := <-done:
+			return true, err
+		case <-time.After(sigintGrace):
+			_ = syscall.Kill(-pgid, syscall.SIGKILL)
+			return true, <-done
+		}
+	}
 }
 
 func intFromAny(v any) int {

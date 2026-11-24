@@ -14,6 +14,7 @@ type ToolStats struct {
 	Tool                  string
 	Total                 int // excludes rate_limited runs
 	Passed                int
+	Timeouts              int
 	RateLimited           int
 	SuccessRate           float64
 	MedianWallTimeMS      float64
@@ -92,6 +93,9 @@ func Summarize(results []Result) ReportSummary {
 				continue
 			}
 			st.Total++
+			if r.TimedOut {
+				st.Timeouts++
+			}
 			if r.Passed {
 				st.Passed++
 				wallTimes = append(wallTimes, float64(r.WallTimeMS))
@@ -166,8 +170,8 @@ func FormatReport(s ReportSummary) string {
 	sb.WriteString("=== pu P0 Eval Report ===\n")
 	for _, t := range tools {
 		st := s.ByTool[t]
-		fmt.Fprintf(&sb, "%-6s  pass: %d/%d (%.1f%%)  median_wall_ms: %.0f  median_notional_cost: $%.6f  median_tokens(in/cached/out): %.0f/%.0f/%.0f",
-			st.Tool, st.Passed, st.Total, st.SuccessRate*100,
+		fmt.Fprintf(&sb, "%-6s  pass: %d/%d (%.1f%%)  timeouts: %d  median_wall_ms: %.0f  median_notional_cost: $%.6f  median_tokens(in/cached/out): %.0f/%.0f/%.0f",
+			st.Tool, st.Passed, st.Total, st.SuccessRate*100, st.Timeouts,
 			st.MedianWallTimeMS, st.MedianNotionalCostUSD,
 			st.MedianInputTokens, st.MedianCachedTokens, st.MedianOutputTokens)
 		if st.RateLimited > 0 {
