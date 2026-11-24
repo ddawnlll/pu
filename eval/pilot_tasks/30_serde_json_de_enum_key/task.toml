@@ -1,0 +1,6 @@
+id = "30_serde_json_de_enum_key"
+repo = "/home/quant/src/pilot_repos/serde_json"
+commit = "5d30df60e916e9b8fc46c74794007ff271fdfbbf"
+category = "large_file"
+prompt = "In src/de.rs (>2700 lines), enum deserialization does not reject non-string object keys properly. Fix src/de.rs to reject non-string enum object keys."
+acceptance = "CARGO_TARGET_DIR=/home/quant/src/pilot_repos/.cargo-target sh -c 'git checkout 2037b634 -- tests/regression/issue979.rs && cargo test --test regression issue979'"

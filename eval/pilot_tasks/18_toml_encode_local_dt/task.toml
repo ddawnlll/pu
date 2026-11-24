@@ -1,0 +1,6 @@
+id = "18_toml_encode_local_dt"
+repo = "/home/quant/src/pilot_repos/toml"
+commit = "277ecb0abd5e5945cf4c0a5cf3668759a27aa7fd"
+category = "feature_refactor"
+prompt = "When encoding local datetimes, dates, and times in BurntSushi/toml, stop shifting them to UTC (update encode.go and internal/tag/rm.go)."
+acceptance = "git checkout c6d720d8 -- encode_test.go && go test -run TestEncode ."

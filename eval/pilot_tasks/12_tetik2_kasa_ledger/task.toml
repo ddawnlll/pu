@@ -1,0 +1,6 @@
+id = "12_tetik2_kasa_ledger"
+repo = "/home/quant/src/tetik2"
+commit = "5aba1dea53d6542175b276b93391bc159aa39d2d"
+category = "feature_refactor"
+prompt = "Serve read-only Kasa ledger panels and measured episode IDs in internal/operator/console.go and internal/operator/console_ledger.go."
+acceptance = "git checkout 368c9e99 -- internal/operator/console_ledger_test.go && go test ./internal/operator/..."

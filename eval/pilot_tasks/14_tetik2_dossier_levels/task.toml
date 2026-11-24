@@ -1,0 +1,6 @@
+id = "14_tetik2_dossier_levels"
+repo = "/home/quant/src/tetik2"
+commit = "1946e7df2faba10f8ad13d05b974f4848007d900"
+category = "feature_refactor"
+prompt = "Resolve current paper dossier levels and isolate model failures across internal/runtime/paper_tools.go and internal/runtime/shadow.go."
+acceptance = "git checkout 5dc9fccf -- internal/runtime/paper_tools_test.go && go test ./internal/runtime/..."

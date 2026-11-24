@@ -1,0 +1,6 @@
+id = "01_lipgloss_table_nil"
+repo = "/home/quant/src/pilot_repos/lipgloss"
+commit = "a79c946156da0e2998027c6c208d0828e9661f8e"
+category = "bugfix"
+prompt = "When a lipgloss table has headers configured but its data is nil, rendering the table omits the headers. Fix table rendering so headers still render when data is nil."
+acceptance = "git checkout 7d3aa334 -- table/table_test.go && go test ./table/..."

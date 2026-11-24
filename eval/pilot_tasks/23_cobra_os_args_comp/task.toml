@@ -1,0 +1,6 @@
+id = "23_cobra_os_args_comp"
+repo = "/home/quant/src/pilot_repos/cobra"
+commit = "f2878bab8c96afd6e36968af96343b35dbb82a82"
+category = "test_build"
+prompt = "Completion tests fail when completions mutate os.Args via an append side effect in completions.go. Fix completions.go so os.Args is never mutated and go test . passes."
+acceptance = "git checkout 746ef071 -- completions_test.go && go test ."

@@ -1,0 +1,6 @@
+id = "24_toml_float_format"
+repo = "/home/quant/src/pilot_repos/toml"
+commit = "89aab296de7a5e5b3669a396d94cd9528c283a30"
+category = "test_build"
+prompt = "Float formatting in unifyText in decode.go fails decode_test.go expectations. Use strconv.FormatFloat for floats in unifyText so go test . passes."
+acceptance = "git checkout 874dff3e -- decode_test.go && go test ."

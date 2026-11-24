@@ -1,0 +1,6 @@
+id = "04_lipgloss_tree_offset"
+repo = "/home/quant/src/pilot_repos/lipgloss"
+commit = "059972614973db6fe22f733a65592b8667efec98"
+category = "bugfix"
+prompt = "In tree/tree.go, Offset swaps start and end when start > end instead of respecting the requested range semantics. Fix Offset so it does not swap start and end."
+acceptance = "git checkout 4da0bdd6 -- tree/tree_test.go && go test ./tree/..."

@@ -1,0 +1,6 @@
+id = "07_gjson_uint_20byte"
+repo = "/home/quant/src/pilot_repos/gjson"
+commit = "c6b726dc25831c0c573e08f161b98f1b7cffbaa6"
+category = "bugfix"
+prompt = "Result.Uint() and Result.Int() in gjson.go return wrong data for 20-byte numeric strings. Fix Uint() and Int() handling for 20-byte strings."
+acceptance = "git checkout f4220de6 -- gjson_test.go && go test ."

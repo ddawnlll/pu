@@ -1,0 +1,6 @@
+id = "08_gjson_uint_overflow"
+repo = "/home/quant/src/pilot_repos/gjson"
+commit = "4221a7d392b61cf24d0c03a768320094c41387ca"
+category = "bugfix"
+prompt = "gjson's uint parsing in gjson.go overflows on values exceeding max uint64 instead of clamping/handling overflow safely. Fix uint overflow handling."
+acceptance = "git checkout c6b726dc -- gjson_test.go && go test ."

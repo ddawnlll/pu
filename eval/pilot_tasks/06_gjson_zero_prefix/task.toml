@@ -1,0 +1,6 @@
+id = "06_gjson_zero_prefix"
+repo = "/home/quant/src/pilot_repos/gjson"
+commit = "f4220de6b5bd8e60fb9e96caa1153877c64d0299"
+category = "bugfix"
+prompt = "gjson fails to parse numeric string values that have leading zero prefixes when converting to numbers. Fix string number parsing to allow leading zero prefixes."
+acceptance = "git checkout 23a31597 -- gjson_test.go && go test ."

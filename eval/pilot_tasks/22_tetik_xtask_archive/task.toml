@@ -1,0 +1,6 @@
+id = "22_tetik_xtask_archive"
+repo = "/home/quant/src/tetik"
+commit = "dfa96facd435783e3dbebde6ed4da41bb6a1bde4"
+category = "test_build"
+prompt = "cargo test -p xtask fails because the xtask dependency fixture and crate count do not carry the new archive crate. Fix xtask/src/deps.rs and xtask/tests/cli.rs so cargo test -p xtask passes."
+acceptance = "CARGO_TARGET_DIR=/home/quant/src/pilot_repos/.cargo-target cargo test -p xtask"

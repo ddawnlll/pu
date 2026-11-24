@@ -1,0 +1,6 @@
+id = "20_serde_json_number_trait"
+repo = "/home/quant/src/pilot_repos/serde_json"
+commit = "738afebc1a1b8d7cd9d4ce4a4696a89f9772816b"
+category = "feature_refactor"
+prompt = "Move the test-only API of Number into an extension trait across build.rs, src/lib.rs, and src/number.rs."
+acceptance = "CARGO_TARGET_DIR=/home/quant/src/pilot_repos/.cargo-target sh -c 'git checkout 8c535a26 -- tests/test.rs && cargo test --test test'"

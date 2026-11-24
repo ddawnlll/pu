@@ -1,0 +1,6 @@
+id = "27_cobra_no_change_unique"
+repo = "/home/quant/src/pilot_repos/cobra"
+commit = "adbc8813901bba65827259daa8e22ff94ec1f30e"
+category = "no_change"
+prompt = "A user reports that cobra does not provide a UniqueArgs validator in args.go or that it accepts duplicate arguments. Investigate args.go and args_test.go; only make changes if a real bug exists."
+acceptance = "go test -run TestUnique . && git diff --quiet"

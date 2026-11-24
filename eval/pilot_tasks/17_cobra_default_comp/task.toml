@@ -1,0 +1,6 @@
+id = "17_cobra_default_comp"
+repo = "/home/quant/src/pilot_repos/cobra"
+commit = "680936a2200be363c61feda8cd29287f0726a48c"
+category = "feature_refactor"
+prompt = "Remove the default 'completion' command if it is the only subcommand on the root command (across command.go and completions.go)."
+acceptance = "git checkout 24ada7fe -- completions_test.go && go test -run TestDefaultCompletionCmd ."

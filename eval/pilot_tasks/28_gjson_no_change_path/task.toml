@@ -1,0 +1,6 @@
+id = "28_gjson_no_change_path"
+repo = "/home/quant/src/pilot_repos/gjson"
+commit = "f004fea8fd87b842f5932f80de1f8a925a8b39b2"
+category = "no_change"
+prompt = "A user reports that Result.Path panics on malformed or empty inputs in gjson.go. Investigate gjson.go and gjson_test.go; only make changes if a real bug exists."
+acceptance = "go test . && git diff --quiet"

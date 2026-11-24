@@ -1,0 +1,6 @@
+id = "16_cobra_comp_desc"
+repo = "/home/quant/src/pilot_repos/cobra"
+commit = "17b6dca2ffaf6113cbd1cf433ec988fa7d63c6f3"
+category = "feature_refactor"
+prompt = "Add a CompletionWithDesc helper across active_help.go, command.go, and completions.go to construct completion entries with descriptions."
+acceptance = "git checkout 8cb30f9c -- completions_test.go && go test -run TestCompletionWithDesc ."
