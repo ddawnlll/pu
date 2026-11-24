@@ -3,6 +3,7 @@ package eval
 import (
 	"context"
 	"errors"
+	"math"
 	"os"
 	osexec "os/exec"
 	"path/filepath"
@@ -10,6 +11,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/ddawnlll/pu/internal/catalog"
 )
 
 func TestAlternatingToolOrder(t *testing.T) {
@@ -269,5 +272,77 @@ func TestReportNotesJcodeMissingCostTurnCap(t *testing.T) {
 	}
 	if !strings.Contains(rep, "Reasoning note (jcode):") {
 		t.Fatalf("expected reasoning note for jcode in report:\n%s", rep)
+	}
+}
+
+func TestJcodeMultiTurnSessionUsageParity(t *testing.T) {
+	tmp := t.TempDir()
+	modelsPath := filepath.Join(tmp, "models.toml")
+	modelsTOML := `default = "deepseek-v4.1-flash"
+
+[models."deepseek-v4.1-flash"]
+driver = "openai-chat-compat"
+model = "deepseek-v4.1-flash"
+auth = "none"
+context_window = 1000000
+input_price_per_m = 0.15
+cached_input_price_per_m = 0.003
+output_price_per_m = 0.60
+`
+	if err := os.WriteFile(modelsPath, []byte(modelsTOML), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Fake jcode binary: writes 3 assistant turns to $JCODE_HOME/sessions/*.journal.jsonl
+	// (including one duplicate message id to verify deduplication), while stdout --json
+	// only emits the LAST turn's usage (matching real `jcode run --json` behavior).
+	fakeBin := filepath.Join(tmp, "fake-jcode")
+	script := `#!/bin/sh
+set -e
+mkdir -p "$JCODE_HOME/sessions"
+cat <<'JSONL' > "$JCODE_HOME/sessions/session_fake.journal.jsonl"
+{"append_messages":[{"id":"m1","role":"assistant","token_usage":{"prompt_tokens":10000,"input_tokens":10000,"output_tokens":100,"cache_read_input_tokens":0}}]}
+{"append_messages":[{"id":"u1","role":"user","content":[{"type":"tool_result"}]}]}
+{"append_messages":[{"id":"m2","role":"assistant","token_usage":{"prompt_tokens":11000,"input_tokens":11000,"output_tokens":200,"cache_read_input_tokens":9000}}]}
+{"append_messages":[{"id":"m2","role":"assistant","token_usage":{"prompt_tokens":11000,"input_tokens":11000,"output_tokens":200,"cache_read_input_tokens":9000}}]}
+{"append_messages":[{"id":"m3","role":"assistant","token_usage":{"prompt_tokens":12000,"input_tokens":12000,"output_tokens":300,"cache_read_input_tokens":10500}}]}
+JSONL
+echo '{"usage":{"input_tokens":12000,"cache_read_input_tokens":10500,"output_tokens":300}}'
+`
+	if err := os.WriteFile(fakeBin, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	out := runJcode(context.Background(), tmp, Task{ID: "fake", Prompt: "hello"}, RunConfig{
+		JcodeBin:        fakeBin,
+		Model:           "deepseek-v4.1-flash",
+		ModelsFile:      modelsPath,
+		ReasoningEffort: "provider_default",
+		Timeout:         30 * time.Second,
+	})
+	if out.Err != nil {
+		t.Fatalf("runJcode error: %v", out.Err)
+	}
+	if out.Turns != 3 {
+		t.Fatalf("Turns = %d, want 3", out.Turns)
+	}
+	wantIn := 10000 + 11000 + 12000
+	wantCached := 0 + 9000 + 10500
+	wantOut := 100 + 200 + 300
+	if out.InputTokens != wantIn || out.CachedInputTokens != wantCached || out.OutputTokens != wantOut {
+		t.Fatalf("tokens = (%d, %d, %d), want (%d, %d, %d)",
+			out.InputTokens, out.CachedInputTokens, out.OutputTokens, wantIn, wantCached, wantOut)
+	}
+	cat, err := catalog.Load(modelsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, _ := cat.Model("deepseek-v4.1-flash")
+	wantCost := m.ComputeCostUSD(wantIn, wantCached, wantOut)
+	if math.Abs(out.NotionalCostUSD-wantCost) > 1e-12 {
+		t.Fatalf("NotionalCostUSD = %.10f, want %.10f", out.NotionalCostUSD, wantCost)
+	}
+	if !out.ReasoningEnforced {
+		t.Fatalf("expected ReasoningEnforced=true when using provider_default parity")
 	}
 }
