@@ -73,6 +73,19 @@ Current milestone: **P0 Complete (M1–M5 merged to `main`)** — ready for the 
 - Gates: `go vet ./...` PASS; `go test ./...` PASS (`TestAlternatingToolOrder`, `TestSummarizeGoNoGoVerdict`, `TestDryRunWorktreesAlternatingAndResultsJSONL`); `CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o pu ./cmd/pu` PASS (7.3 MiB).
 - Live 3-task dry run (`deepseek-v4.1-flash`, `reasoning_effort=low`): `pu` 3/3 (100.0%, median wall 21,231 ms, median notional cost $0.000937, median tokens 8416/3840/399); `jcode` 3/3 (100.0%, median wall 73,756 ms, median tokens 12637/12416/111).
 
+### M5 Eval Fairness (merged)
+- Fixed all 5 eval fairness items on `p0/m5-eval-fairness`:
+  1. **External wall time for both tools**: `wall_time_ms` now measures external process start-to-exit for both `pu` and `jcode`; `pu`'s self-reported wall time is recorded separately in `internal_wall_time_ms`.
+  2. **Reasoning effort parity**: `jcode run` has no CLI reasoning-effort flag; the harness writes `openai_reasoning_effort = "<effort>"` into each run's isolated `JCODE_HOME/config.toml` as best effort, and records `reasoning_effort`, `reasoning_enforced` (`true` for `pu`, `false` for `jcode`), and `reasoning_note` in `results.jsonl` and the report.
+  3. **Isolated `jcode` home/config per run**: Each `jcode` invocation runs with a fresh temp `JCODE_HOME` + `XDG_CONFIG_HOME`/`XDG_DATA_HOME`/`XDG_CACHE_HOME`, `memory_sidecar_enabled = false`, `JCODE_NO_TELEMETRY=1`, and `OPENCODE_GO_API_KEY` forwarded from `OPENCODE_API_KEY` when unset so zero memory or sessions carry between tasks. Also prevented crashed/failed agent runs (`agent_status == "failed"` / `"setup_error"`) from falsely passing `no_change` acceptance checks.
+  4. **Budget limits in `results.jsonl` and report**: Added `budget` (`max_cost_usd`, `max_turns`, `timeout_ms`, `cost_cap_enforced`, `turn_cap_enforced`, `timeout_enforced`) to every `Result`; `FormatReport` explicitly notes that `jcode` has no CLI cost/turn cap (harness timeout only).
+  5. **Rate-limit detection + `--resume`**: `IsRateLimited` detects HTTP 429 and OpenCode Go quota/5-hour/weekly/monthly limit errors, marks runs `agent_status: "rate_limited"` (`rate_limited: true`), excludes them from pass/fail counts and medians in `Summarize`/`FormatReport`, and `--resume` skips already-completed `(task_id, tool)` entries while retrying `rate_limited` ones.
+- Fair live 3-task alternating dry run (`deepseek-v4.1-flash`, `reasoning_effort=low`, external wall time, isolated `JCODE_HOME`, `max_cost_usd=0.20`, `max_turns=12`, `timeout=2m`):
+  - `pu`: **3/3 (100.0%)**, median external wall **39,599 ms** (internal 39,579 ms), median notional cost **$0.000952**, median tokens (in/cached/out) **8,408 / 3,712 / 473** (cumulative across turns).
+  - `jcode`: **3/3 (100.0%)**, median external wall **60,826 ms**, median notional cost **$0.000262**, median tokens (in/cached/out) **11,694 / 11,264 / 250** (note: `jcode --json` emits last-turn usage rather than cumulative across turns).
+  - Spec §12 Verdict on 3-task dry run: **GO** (`pu` 100.0% >= `jcode` 100.0%; median external wall-time gain **34.9%** >= 15%).
+- Gates: `go vet ./...` PASS; `go test ./...` PASS (including `TestRateLimitDetectionExclusionAndResume`, `TestReportNotesJcodeMissingCostTurnCap`); `CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o pu ./cmd/pu` PASS.
+
 ## Decisions
 
 - **OpenCode Go endpoint path & session header**: Chat-completions models (including pilot model `deepseek-v4.1-flash`) use `https://opencode.ai/inference/go/openai/v1`, `reasoning_content`, and require `x-opencode-session` (`provider.Request.SessionID`).
@@ -88,4 +101,5 @@ Current milestone: **P0 Complete (M1–M5 merged to `main`)** — ready for the 
 
 ## Open questions
 
-- **M5 pilot pacing vs OpenCode Go 5-hour usage limit**: OpenCode Go enforces a rolling 5-hour allowance (20% of monthly allowance) and weekly limit (50%). The M5 harness should note/handle rate limits cleanly when running the real 30-task pilot.
+- **jcode `--json` token accounting**: `jcode run --json` reports `usage` for the final turn rather than cumulative across all turns, so raw token/notional-cost comparisons against `pu` (which sums across all turns) should note this until `jcode` exposes cumulative session usage.
+- **OpenCode Go 5-hour / weekly usage limits during 30-task pilot**: Handled via `rate_limited` classification + `pu-eval --resume` so interrupted pilots can resume cleanly after the window resets.
