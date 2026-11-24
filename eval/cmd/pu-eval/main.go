@@ -19,7 +19,8 @@ func main() {
 	reasoningEffort := flag.String("reasoning-effort", "provider_default", "reasoning effort (\"provider_default\" uses provider default for both tools)")
 	maxCost := flag.Float64("max-cost-usd", 0.50, "notional cost cap per task in USD")
 	maxTurns := flag.Int("max-turns", 20, "max turns per task")
-	timeout := flag.Duration("timeout", 3*time.Minute, "timeout per task run")
+	timeout := flag.Duration("timeout", 15*time.Minute, "tool timeout per task run (harness adds 30s grace)")
+	parallel := flag.Int("parallel", 2, "max tasks to run concurrently (each task runs pu and jcode concurrently)")
 	puBin := flag.String("pu-bin", "./pu", "path to pu binary")
 	jcodeBin := flag.String("jcode-bin", "jcode", "path to jcode binary")
 	toolsCSV := flag.String("tools", "pu,jcode", "comma-separated tools to run (e.g. pu,jcode or pu)")
@@ -41,10 +42,11 @@ func main() {
 			Model:           *model,
 			ModelsFile:      *modelsFile,
 			ReasoningEffort: *reasoningEffort,
-			MaxCostUSD:      *maxCost,
-			MaxTurns:        *maxTurns,
-			Timeout:         *timeout,
-			PuBin:           *puBin,
+			MaxCostUSD:       *maxCost,
+			MaxTurns:         *maxTurns,
+			Timeout:          *timeout,
+			MaxParallelTasks: *parallel,
+			PuBin:            *puBin,
 			JcodeBin:        *jcodeBin,
 			Tools:           tools,
 			Ablate:          *ablate,

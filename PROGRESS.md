@@ -110,9 +110,10 @@ Current milestone: **P0 Complete (M1–M5 merged to `main`)** — ready for the 
   - Finding: OpenCode Go upstream latency spikes affect both tools equally (`r1`/`r2` hit ~45–60s/turn; `r3` dropped to ~6–9s/turn); `pu` still uses ~2–5x fewer tokens/cost per task.
 - Gates: `go vet ./...` PASS; `go test ./...` PASS; `CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o pu ./cmd/pu` PASS.
 
-## Pilot results (interim — 10/30 paired tasks completed before 17:10 cutoff; resumable via `--resume`)
+## Pilot v0 (3m cap, invalid)
 
-- **Run configuration:** `eval/pilot_tasks` (30 frozen real-history tasks, `SELECTION.md`), `deepseek-v4.1-flash` on OpenCode Go, `provider_default` reasoning for both tools, alternating order (odd `jcode -> pu`, even `pu -> jcode`), `--timeout 3m`, `--max-turns 20`, `--max-cost-usd 0.50` (`pu` only; `jcode` has no CLI cost/turn cap), pre-seeded isolated `JCODE_HOME` + `stdin=/dev/null` for both tools. Raw results saved in `eval/pilot_results.jsonl` (21 runs: tasks 01–10 paired + task 11 `jcode`; resume with `pu-eval --resume --tasks eval/pilot_tasks --out eval/pilot_results.jsonl`).
+- **Status:** Invalid — 16 of 21 runs hit the 3m timeout, so v0 measured the cap rather than the agents. Archived at `eval/pilot_v0_3m_results.jsonl` and not resumed.
+- **Run configuration:** `eval/pilot_tasks` (30 frozen real-history tasks, `SELECTION.md`), `deepseek-v4.1-flash` on OpenCode Go, `provider_default` reasoning for both tools, alternating order (odd `jcode -> pu`, even `pu -> jcode`), `--timeout 3m`, `--max-turns 20`, `--max-cost-usd 0.50` (`pu` only; `jcode` has no CLI cost/turn cap), pre-seeded isolated `JCODE_HOME` + `stdin=/dev/null` for both tools. Raw results archived in `eval/pilot_v0_3m_results.jsonl` (21 runs: tasks 01–10 paired + task 11 `jcode`).
 - **Headline metrics (all completed runs so far):**
   - `pu`: **5/10 (50.0%)** pass, median wall **180,015 ms**, median notional cost **$0.006525** (median tokens: 185,872 in / 166,656 cached / 4,727 out).
   - `jcode`: **2/11 (18.2%)** pass (**2/10 = 20.0%** on the 10 paired tasks), median wall **152,536 ms**, median notional cost **$0.008862** (median tokens: 346,154 in / 316,416 cached / 5,754 out).
@@ -128,6 +129,13 @@ Current milestone: **P0 Complete (M1–M5 merged to `main`)** — ready for the 
   3. `01_lipgloss_table_nil` (`pu` win): `pu` PASS (`budget_exhausted` at 180.1s after applying the fix, 17 turns, $0.00918) vs `jcode` FAIL timeout at 180.2s (7 turns, $0.00585, fix incomplete).
   4. `03_lipgloss_alpha_enum` (`jcode` win): `jcode` PASS in 154.0s / 15 turns / $0.00993 vs `pu` FAIL (`signal: killed` at 180.0s before flushing JSON report).
   5. `05_lipgloss_unset_underline` (`jcode` win): `jcode` PASS in 151.0s / 18 turns / $0.00779 vs `pu` FAIL (`signal: killed` at 180.0s before flushing JSON report).
+
+### Pilot v1 Phase 1 — Harness Fixes (merged)
+- **Archived v0:** Renamed `eval/pilot_results.jsonl` -> `eval/pilot_v0_3m_results.jsonl` and labeled v0 invalid (3m cap).
+- **Graceful timeouts (`eval/runner.go`):** Set harness timeout to `toolTimeout + 30s` (`HarnessTimeoutMS` recorded in `budget`). On expiry, harness sends `SIGINT` to the process group (`-pgid`), waits `10s`, then sends `SIGKILL` (`runCmdWithGracefulInterrupt`), so `pu` always flushes its JSON report. Added `timed_out` tracking and `TestGracefulInterruptTimeoutFlushesReport`.
+- **`jcode` 1-turn stall diagnosis (07 / 11):** Captured `jcode` log/journal on `07_gjson_uint_20byte` with preserved isolated `JCODE_HOME`: `jcode` executed tools normally, opened an HTTPS SSE stream (`status=200 OK` on `https://opencode.ai/zen/go/v1`), and then sat idle inside its SSE stream reader waiting on upstream OpenCode Go stream chunks (not a harness stdin, tool-call, or prompt hang). Cause is in `jcode`/upstream SSE handling; 15m timeout in v1 gives full headroom.
+- **Concurrency & scoring (`eval/runner.go`, `eval/cmd/pu-eval/main.go`):** Run `pu` and `jcode` concurrently per task in separate git worktrees, with `--parallel 2` (max 2 tasks in parallel = 4 concurrent processes), preserving `order_index` in `results.jsonl`. Acceptance pass alone determines `passed` (excluding `rate_limited` and `setup_error`), and any `rate_limited` run halts scheduling of remaining tasks. Verified with `TestConcurrentTwoTasksTwoTools`.
+- Gates: `go vet ./...` PASS; `go test ./...` PASS; release build PASS.
 
 ## Decisions
 

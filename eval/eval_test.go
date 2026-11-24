@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"reflect"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -82,6 +84,7 @@ func TestDryRunWorktreesAlternatingAndResultsJSONL(t *testing.T) {
 
 	var observedOrder []string
 	resultsPath := filepath.Join(tmp, "results.jsonl")
+	var mu sync.Mutex
 	results, err := RunAll(context.Background(), RunConfig{
 		TasksDir:    tasksDir,
 		ResultsPath: resultsPath,
@@ -89,7 +92,9 @@ func TestDryRunWorktreesAlternatingAndResultsJSONL(t *testing.T) {
 		Timeout:     30 * time.Second,
 		Tools:       []string{"pu", "jcode"},
 		Runner: func(ctx context.Context, tool, worktreeDir string, task Task, cfg RunConfig) AgentOutcome {
+			mu.Lock()
 			observedOrder = append(observedOrder, task.ID+":"+tool)
+			mu.Unlock()
 			// Verify clean worktree starts with "bad" (no leakage from previous run).
 			b, _ := os.ReadFile(filepath.Join(worktreeDir, "val.txt"))
 			if strings.TrimSpace(string(b)) != "bad" {
@@ -113,16 +118,20 @@ func TestDryRunWorktreesAlternatingAndResultsJSONL(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RunAll: %v", err)
 	}
-	wantOrder := []string{
-		"01_task:jcode", "01_task:pu",
-		"02_task:pu", "02_task:jcode",
-		"03_task:jcode", "03_task:pu",
+	if len(results) != 6 || len(observedOrder) != 6 {
+		t.Fatalf("expected 6 results/runs, got %d/%d", len(results), len(observedOrder))
 	}
-	if !reflect.DeepEqual(observedOrder, wantOrder) {
-		t.Fatalf("order = %v, want %v", observedOrder, wantOrder)
+	orderIdx := make(map[string]int, len(results))
+	for _, r := range results {
+		orderIdx[r.TaskID+":"+r.Tool] = r.OrderIndex
 	}
-	if len(results) != 6 {
-		t.Fatalf("expected 6 results, got %d", len(results))
+	wantIdx := map[string]int{
+		"01_task:jcode": 1, "01_task:pu": 2,
+		"02_task:pu": 1, "02_task:jcode": 2,
+		"03_task:jcode": 1, "03_task:pu": 2,
+	}
+	if !reflect.DeepEqual(orderIdx, wantIdx) {
+		t.Fatalf("orderIdx = %v, want %v", orderIdx, wantIdx)
 	}
 
 	readBack, err := ReadResults(resultsPath)
@@ -211,14 +220,18 @@ func TestRateLimitDetectionExclusionAndResume(t *testing.T) {
 	if err != nil || len(rows) != 2 {
 		t.Fatalf("ReadResults 1: len=%d err=%v", len(rows), err)
 	}
-	if !rows[1].RateLimited || rows[1].AgentStatus != "rate_limited" {
-		t.Fatalf("expected 02_rl to be rate_limited, got %+v", rows[1])
+	byID := make(map[string]Result, len(rows))
+	for _, r := range rows {
+		byID[r.TaskID] = r
 	}
-	if rows[0].WallTimeMS != 1200 || rows[0].InternalWallTimeMS != 1150 {
-		t.Fatalf("expected external=1200 internal=1150, got %+v", rows[0])
+	if !byID["02_rl"].RateLimited || byID["02_rl"].AgentStatus != "rate_limited" {
+		t.Fatalf("expected 02_rl to be rate_limited, got %+v", byID["02_rl"])
 	}
-	if !rows[0].Budget.CostCapEnforced || !rows[0].Budget.TurnCapEnforced {
-		t.Fatalf("expected pu budget caps recorded as enforced, got %+v", rows[0].Budget)
+	if byID["01_ok"].WallTimeMS != 1200 || byID["01_ok"].InternalWallTimeMS != 1150 {
+		t.Fatalf("expected external=1200 internal=1150, got %+v", byID["01_ok"])
+	}
+	if !byID["01_ok"].Budget.CostCapEnforced || !byID["01_ok"].Budget.TurnCapEnforced {
+		t.Fatalf("expected pu budget caps recorded as enforced, got %+v", byID["01_ok"].Budget)
 	}
 
 	sum1 := Summarize(rows)
@@ -344,5 +357,93 @@ echo '{"usage":{"input_tokens":12000,"cache_read_input_tokens":10500,"output_tok
 	}
 	if !out.ReasoningEnforced {
 		t.Fatalf("expected ReasoningEnforced=true when using provider_default parity")
+	}
+}
+
+func TestGracefulInterruptTimeoutFlushesReport(t *testing.T) {
+	tmp := t.TempDir()
+	fakePu := filepath.Join(tmp, "fake-pu")
+	// Fake pu traps SIGINT, flushes its JSON report to stdout, and exits cleanly.
+	script := `#!/bin/sh
+trap 'echo "{\"status\":\"interrupted\",\"reason\":\"sigint\",\"turns\":4,\"wall_time_ms\":150,\"notional_cost_usd\":0.001,\"tokens\":{\"input_tokens\":1000,\"cached_input_tokens\":500,\"output_tokens\":80}}"; exit 1' INT
+while true; do sleep 0.05; done
+`
+	if err := os.WriteFile(fakePu, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	out := runPu(context.Background(), tmp, Task{ID: "sigint-test", Prompt: "hello"}, RunConfig{
+		PuBin:               fakePu,
+		Timeout:             100 * time.Millisecond,
+		HarnessTimeoutExtra: 100 * time.Millisecond,
+		SigintGrace:         2 * time.Second,
+		ReasoningEffort:     "provider_default",
+	})
+	if !out.TimedOut {
+		t.Fatalf("expected TimedOut=true, got false")
+	}
+	if out.Turns != 4 || out.Status != "interrupted" || out.InputTokens != 1000 {
+		t.Fatalf("expected flushed JSON report on SIGINT, got %+v", out)
+	}
+}
+
+func TestConcurrentTwoTasksTwoTools(t *testing.T) {
+	tmp := t.TempDir()
+	repo := filepath.Join(tmp, "repo")
+	_ = os.MkdirAll(repo, 0o755)
+	runGit(t, repo, "init")
+	runGit(t, repo, "config", "user.name", "test")
+	runGit(t, repo, "config", "user.email", "test@example.com")
+	_ = os.WriteFile(filepath.Join(repo, "ok.txt"), []byte("ok\n"), 0o644)
+	runGit(t, repo, "add", ".")
+	runGit(t, repo, "commit", "-m", "init")
+
+	tasksDir := filepath.Join(tmp, "tasks")
+	for _, id := range []string{"01_a", "02_b", "03_c"} {
+		d := filepath.Join(tasksDir, id)
+		_ = os.MkdirAll(d, 0o755)
+		toml := "id = \"" + id + "\"\nrepo = \"" + filepath.ToSlash(repo) + "\"\ncommit = \"HEAD\"\ncategory = \"bugfix\"\nprompt = \"p\"\nacceptance = \"true\"\n"
+		_ = os.WriteFile(filepath.Join(d, "task.toml"), []byte(toml), 0o644)
+	}
+
+	var cur, peak atomic.Int32
+	var wtMu sync.Mutex
+	worktrees := make(map[string]bool)
+
+	resultsPath := filepath.Join(tmp, "results.jsonl")
+	res, err := RunAll(context.Background(), RunConfig{
+		TasksDir:         tasksDir,
+		ResultsPath:      resultsPath,
+		Model:            "deepseek-v4.1-flash",
+		Timeout:          30 * time.Second,
+		MaxParallelTasks: 2,
+		Tools:            []string{"pu", "jcode"},
+		Runner: func(ctx context.Context, tool, worktreeDir string, task Task, cfg RunConfig) AgentOutcome {
+			n := cur.Add(1)
+			for {
+				p := peak.Load()
+				if n <= p || peak.CompareAndSwap(p, n) {
+					break
+				}
+			}
+			wtMu.Lock()
+			worktrees[worktreeDir] = true
+			wtMu.Unlock()
+			time.Sleep(120 * time.Millisecond)
+			cur.Add(-1)
+			return AgentOutcome{Status: "completed", Turns: 1}
+		},
+	})
+	if err != nil {
+		t.Fatalf("RunAll: %v", err)
+	}
+	if len(res) != 6 {
+		t.Fatalf("len(res) = %d, want 6", len(res))
+	}
+	if peak.Load() < 2 || peak.Load() > 4 {
+		t.Fatalf("peak concurrency = %d, want in [2, 4]", peak.Load())
+	}
+	if len(worktrees) != 6 {
+		t.Fatalf("expected 6 distinct worktrees, got %d", len(worktrees))
 	}
 }
