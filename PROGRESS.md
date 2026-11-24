@@ -1,6 +1,6 @@
 # pu — Progress
 
-Current milestone: **M4 — Exec, verification, stopping** (M1–M3 merged to `main`)
+Current milestone: **M5 — Eval harness** (M1–M4 merged to `main`)
 
 ## M3 Checklist — Edit and undo (Merged)
 
@@ -19,24 +19,24 @@ Current milestone: **M4 — Exec, verification, stopping** (M1–M3 merged to `m
 - [x] Create/delete round-trip through undo (`TestCreateDeleteRoundTripThroughUndo`)
 - [x] `go vet ./...`, `go test ./...`, and `CGO_ENABLED=0` release build pass (7.2 MiB)
 
-## M4 Checklist — Exec, verification, stopping
+## M4 Checklist — Exec, verification, stopping (Merged)
 
-- [ ] `internal/exec`: `Run` with pipes (no PTY in P0), `Setpgid`, timeout, SIGINT -> SIGTERM to `-pgid` -> 300ms -> SIGKILL, allowlist scrubbed env, 64 KiB output cap
-- [ ] `internal/exec` + `internal/edit`: post-`exec` `stat` (mtime + size) on tracked files, hash changed files, bump revision
-- [ ] `internal/plan`: in-memory plan mirrored to `.pu/plan.json` (spec §05 shape), evidence records (command, exit code, revision, marked `stale` when any covered file's revision changes)
-- [ ] `internal/core`: terminal statuses (`completed`, `blocked`, `budget_exhausted`, `interrupted`, `failed`), `completed` requires current evidence for every plan step, up to 2 open-step continuations then `failed`
-- [ ] `internal/core`: external-content gate (`--untrusted-repo` and reads outside repo root -> next `exec` returns `blocked` in headless unless `--trust-untrusted`; normal local flow never asks)
-- [ ] `internal/core`: 2-stage KV-friendly context ceiling (≥75% trim superseded reads & stale test output to short refs; ≥85% clean state handoff to fresh prefix; `events.jsonl` keeps everything)
-- [ ] `internal/core` + `cmd/pu run`: register `exec` and `plan` tools (alphabetical Layer 2), final report JSON (status, turns, raw tokens, notional cost, wall time, files changed, evidence)
+- [x] `internal/exec`: `Run` with pipes (no PTY in P0), `Setpgid`, timeout, SIGINT -> SIGTERM to `-pgid` -> 300ms -> SIGKILL, allowlist scrubbed env, 64 KiB output cap
+- [x] `internal/exec` + `internal/edit`: post-`exec` `stat` (mtime + size) on tracked files, hash changed files, bump revision
+- [x] `internal/plan`: in-memory plan mirrored to `.pu/plan.json` (spec §05 shape), evidence records (command, exit code, revision, marked `stale` when any covered file's revision changes)
+- [x] `internal/core`: terminal statuses (`completed`, `blocked`, `budget_exhausted`, `interrupted`, `failed`), `completed` requires current evidence for every plan step, up to 2 open-step continuations then `failed`
+- [x] `internal/core`: external-content gate (`--untrusted-repo` and reads outside repo root -> next `exec` returns `blocked` in headless unless `--trust-untrusted`; normal local flow never asks)
+- [x] `internal/core`: 2-stage KV-friendly context ceiling (≥75% trim superseded reads & stale test output to short refs; ≥85% clean state handoff to fresh prefix; `events.jsonl` keeps everything)
+- [x] `internal/core` + `cmd/pu run`: register `exec` and `plan` tools (alphabetical Layer 2), final report JSON (status, turns, raw tokens, notional cost, wall time, files changed, evidence)
 
 ### M4 Done-when gates
-- [ ] `exec`-modified files stale earlier evidence
-- [ ] Child env contains no API keys/tokens/secrets
-- [ ] Untrusted gate blocks in headless and never fires in local flow
-- [ ] SIGINT leaves no orphan processes
-- [ ] Budget exhaustion never reports `completed`
-- [ ] Compaction at 75% and 85% loses nothing from `events.jsonl`
-- [ ] `go vet ./...`, `go test ./...`, and `CGO_ENABLED=0` release build pass
+- [x] `exec`-modified files stale earlier evidence (`TestExecModifiedFileStalesEarlierEvidence`)
+- [x] Child env contains no API keys/tokens/secrets (`TestExecChildEnvContainsNoKeys`)
+- [x] Untrusted gate blocks in headless and never fires in local flow (`TestUntrustedGateHeadlessVsLocal`)
+- [x] SIGINT leaves no orphan processes (`TestExecCancelLeavesNoOrphanProcesses`)
+- [x] Budget exhaustion never reports `completed` (`TestBudgetExhausted`)
+- [x] Compaction at 75% and 85% loses nothing from `events.jsonl` (`TestCompaction75And85PreservesEventsJSONL`)
+- [x] `go vet ./...`, `go test ./...`, and `CGO_ENABLED=0` release build pass (7.3 MiB)
 
 ## M5 Checklist — Eval harness
 
@@ -63,6 +63,10 @@ Current milestone: **M4 — Exec, verification, stopping** (M1–M3 merged to `m
 ### M3 — Edit and undo (merged)
 - Built `internal/edit/patch.go` (`hashline`, `search_replace`, `full_rewrite`, `create`, `delete`, strict revision/anchor lock with fresh-anchored rejection and ≤50 KiB fresh-anchored diff), `internal/edit/checkpoint.go` (`.pu/checkpoints/<session>/` + `manifest.json`, `UndoSession`, `DiffSession`), registered `patch` in `internal/core`, and wired `pu diff`/`pu undo` in `cmd/pu`.
 - Gates: `go vet ./...` PASS; `go test -v ./...` PASS (all 5 M3 gate tests in `internal/edit/patch_test.go` green); `CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o pu ./cmd/pu` PASS (7.2 MiB).
+
+### M4 — Exec, verification, stopping (merged)
+- Built `internal/exec/run.go` (pipe `Run`, `Setpgid`, scrubbed env, 64 KiB cap, SIGTERM -> 300ms -> SIGKILL teardown), `internal/edit` post-`exec` `CheckExternalMutations`, `internal/plan` (`.pu/plan.json` mirror + revision-stale evidence), `internal/core/compaction.go` (75% soft trim + 85% clean state handoff), untrusted external-content gate, open-step continuations (max 2 then `failed`), and `cmd/pu run` signal/flag wiring.
+- Gates: `go vet ./...` PASS; `go test -v ./...` PASS (`TestExecChildEnvContainsNoKeys`, `TestExecCancelLeavesNoOrphanProcesses`, `TestExecModifiedFileStalesEarlierEvidence`, `TestUntrustedGateHeadlessVsLocal`, `TestOpenStepContinuationsThenFailed`, `TestCompaction75And85PreservesEventsJSONL`, `TestBudgetExhausted`); `CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o pu ./cmd/pu` PASS (7.3 MiB).
 
 ## Decisions
 

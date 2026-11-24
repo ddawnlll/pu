@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 )
 
 // AnchoredLine is a single line with its 1-based line number and unique 5-letter anchor.
@@ -49,11 +50,14 @@ func (r *ReadResult) Format() string {
 	return sb.String()
 }
 
-// FileRecord binds a tracked file path to its latest observed SHA-256 and revision.
+// FileRecord binds a tracked file path to its latest observed SHA-256, stat, and revision.
 type FileRecord struct {
 	Path     string
+	AbsPath  string
 	SHA256   string
 	Revision int
+	Size     int64
+	ModTime  time.Time
 }
 
 // Tracker maintains per-file SHA-256 hashes and monotonic revisions across a session.
@@ -138,7 +142,7 @@ func (t *Tracker) Read(path string, startLine, endLine int) (*ReadResult, error)
 		displayPath = filepath.ToSlash(rel)
 	}
 
-	rev := t.recordHash(displayPath, hashHex)
+	rev := t.recordHashWithPath(displayPath, absPath, hashHex)
 
 	rawLines := splitLines(string(data))
 	total := len(rawLines)
@@ -209,10 +213,93 @@ func (t *Tracker) Record(path string) (FileRecord, bool) {
 	return *rec, true
 }
 
+// WorkspaceRevision returns the current monotonic workspace revision counter.
+func (t *Tracker) WorkspaceRevision() int {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.nextRev
+}
+
+// CheckExternalMutations stats every tracked file (mtime + size), re-hashes any
+// changed file (or marks deleted files), bumps their revision, and returns all
+// files whose content changed.
+func (t *Tracker) CheckExternalMutations() []FileRecord {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	var changed []FileRecord
+	for _, rec := range t.files {
+		absPath := rec.AbsPath
+		if absPath == "" {
+			absPath = filepath.Join(t.repoRoot, filepath.FromSlash(rec.Path))
+		}
+		info, err := os.Stat(absPath)
+		if err != nil {
+			if os.IsNotExist(err) && rec.SHA256 != "deleted" {
+				t.nextRev++
+				rec.SHA256 = "deleted"
+				rec.Revision = t.nextRev
+				rec.Size = 0
+				rec.ModTime = time.Time{}
+				changed = append(changed, *rec)
+			}
+			continue
+		}
+		// Fast path: unchanged size & mtime, but still hash if mtime is zero or differs.
+		if !rec.ModTime.IsZero() && info.Size() == rec.Size && info.ModTime().Equal(rec.ModTime) {
+			// Guard against coarse filesystem mtime granularity within the same tick by
+			// hashing only when size or mtime changed OR when mtime is within 2s of now.
+			if time.Since(info.ModTime()) > 2*time.Second {
+				continue
+			}
+		}
+		data, rErr := os.ReadFile(absPath)
+		if rErr != nil {
+			continue
+		}
+		newHash := sha256Hex(data)
+		rec.Size = info.Size()
+		rec.ModTime = info.ModTime()
+		if newHash != rec.SHA256 {
+			t.nextRev++
+			rec.SHA256 = newHash
+			rec.Revision = t.nextRev
+			changed = append(changed, *rec)
+		}
+	}
+	return changed
+}
+
+// SnapshotRecords returns a copy of all tracked file records.
+func (t *Tracker) SnapshotRecords() []FileRecord {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	out := make([]FileRecord, 0, len(t.files))
+	for _, rec := range t.files {
+		out = append(out, *rec)
+	}
+	return out
+}
+
 func (t *Tracker) recordHash(displayPath, hashHex string) int {
+	absPath := filepath.Join(t.repoRoot, filepath.FromSlash(displayPath))
+	return t.recordHashWithPath(displayPath, absPath, hashHex)
+}
+
+func (t *Tracker) recordHashWithPath(displayPath, absPath, hashHex string) int {
+	var size int64
+	var modTime time.Time
+	if info, err := os.Stat(absPath); err == nil {
+		size = info.Size()
+		modTime = info.ModTime()
+	}
+
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	if rec, ok := t.files[displayPath]; ok {
+		rec.AbsPath = absPath
+		rec.Size = size
+		rec.ModTime = modTime
 		if rec.SHA256 == hashHex {
 			return rec.Revision
 		}
@@ -224,8 +311,11 @@ func (t *Tracker) recordHash(displayPath, hashHex string) int {
 	t.nextRev++
 	t.files[displayPath] = &FileRecord{
 		Path:     displayPath,
+		AbsPath:  absPath,
 		SHA256:   hashHex,
 		Revision: t.nextRev,
+		Size:     size,
+		ModTime:  modTime,
 	}
 	return t.nextRev
 }
