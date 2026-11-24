@@ -1,50 +1,80 @@
 # pu — Progress
 
-Current milestone: **M2 — Loop, read, search** (M1 approved)
+Current milestone: **M4 — Exec, verification, stopping** (M1–M3 merged to `main`)
 
-## M2 Checklist
+## M3 Checklist — Edit and undo (Merged)
 
-### Pre-M2 fixes
-- [x] `go mod tidy` (with `golang.org/x/sync` for `errgroup`)
-- [x] `parseOpenAISSE`: return error if stream ends without `[DONE]` and without `finish_reason` (`TestStreamIncompleteWithoutDoneOrFinishReason`)
-- [x] Deterministic fallback ID (`call_<turn>_<index>`) when a streamed tool call has empty `id` (`TestStreamToolCallEmptyIDGetsDeterministicID`)
-- [x] Define cost as notional list-price cost alongside raw token counts; record 5-hour usage limit open question for M5
+- [x] `internal/edit`: `patch` tool supporting `hashline` (default), `search_replace` (exact 1 match), `full_rewrite`, `create`, `delete`
+- [x] `internal/edit`: strict revision lock (stale anchor or file hash rejected with zero fuzzy matching, carrying fresh anchors for the affected range); success returns fresh-anchored diff (≤50 KiB)
+- [x] `internal/edit`: session checkpointing under `.pu/checkpoints/<session>/` + `manifest.json` before first write to each file
+- [x] `internal/edit`: `Undo` (restores checkpointed files, removes created files, leaves untouched dirty files alone) and `Diff` (session change summary)
+- [x] `internal/core`: register `patch` in Layer 2 (alphabetical: `patch`, `read`, `search`) and wire session checkpointer
+- [x] `cmd/pu`: implement `pu diff` and `pu undo` subcommands
 
-### M2 implementation
-- [x] `internal/core/system.txt`: embedded Layer 1 system prompt (`go:embed`, zero session/repo variance)
-- [x] `internal/core`: 4-layer KV-invariant prefix (Layer 1 static prompt, Layer 2 alphabetically sorted byte-identical tool schemas, Layer 3 session-start `AGENTS.md`/`PU.md`, Layer 4 history + Turn-0 fingerprint in first user turn)
-- [x] `internal/core`: Turn-0 fingerprint (`git status --porcelain=v2`, branch, top-level tree summary, manifests, test runner)
-- [x] `internal/edit`: `read` tool with 5-letter unique line anchors (even for identical lines) and file hash bound to revision
-- [x] `internal/search`: `search` tool (`rg` with pure-Go `WalkDir` fallback; distinct `no_matches` vs `truncated` results)
-- [x] `internal/core`: single-writer loop, parallel independent tool calls via `errgroup`, 64 KiB output spill to `.pu/sessions/<id>/out/`, budget limits (`--max-cost-usd`, `--max-turns`, `--timeout` -> `budget_exhausted`)
-- [x] `cmd/pu run`: wire headless runner outputting JSON summary with raw tokens and notional list-price cost
+### M3 Done-when gates
+- [x] Stale anchors rejected with fresh anchors returned (`TestHashlineStaleAnchorRejectedWithFreshAnchors`)
+- [x] Edits on identical lines hit the intended line (`TestHashlineEditsIntendedIdenticalLine`)
+- [x] `search_replace` with 0 or 2+ matches rejected (`TestSearchReplaceRejectsZeroOrMultipleMatches`)
+- [x] Dirty git tree undo restores user's uncommitted version of edited file and leaves untouched dirty files alone (`TestDirtyGitTreeUndoRestoresUncommittedAndLeavesUntouchedAlone`)
+- [x] Create/delete round-trip through undo (`TestCreateDeleteRoundTripThroughUndo`)
+- [x] `go vet ./...`, `go test ./...`, and `CGO_ENABLED=0` release build pass (7.2 MiB)
 
-### M2 Done-when gates
-- [x] Scripted fake-provider session proves Layers 1–3 are byte-identical on every request (`TestFourLayerPrefixByteIdenticalAcrossTurns`)
-- [x] Anchors stay unique in a file of 1,000 identical lines (`TestAnchorsUniqueIn1000IdenticalLines`)
-- [x] Parallel reads come back in one tool-result turn (`TestFourLayerPrefixByteIdenticalAcrossTurns`)
-- [x] Search no-match vs truncated is tested across `rg` and `WalkDir` fallback (`TestSearchNoMatchVsTruncated`)
-- [x] Live two-turn tool-call smoke test confirms `deepseek-v4.1-flash` `reasoning_content` history behavior (`TestSmokeTwoTurnToolCallReasoningHistory`)
-- [x] `go vet ./...`, `go test ./...`, and `CGO_ENABLED=0` release build pass (7.1 MiB static binary)
+## M4 Checklist — Exec, verification, stopping
 
-## M1 Checklist (Approved)
+- [ ] `internal/exec`: `Run` with pipes (no PTY in P0), `Setpgid`, timeout, SIGINT -> SIGTERM to `-pgid` -> 300ms -> SIGKILL, allowlist scrubbed env, 64 KiB output cap
+- [ ] `internal/exec` + `internal/edit`: post-`exec` `stat` (mtime + size) on tracked files, hash changed files, bump revision
+- [ ] `internal/plan`: in-memory plan mirrored to `.pu/plan.json` (spec §05 shape), evidence records (command, exit code, revision, marked `stale` when any covered file's revision changes)
+- [ ] `internal/core`: terminal statuses (`completed`, `blocked`, `budget_exhausted`, `interrupted`, `failed`), `completed` requires current evidence for every plan step, up to 2 open-step continuations then `failed`
+- [ ] `internal/core`: external-content gate (`--untrusted-repo` and reads outside repo root -> next `exec` returns `blocked` in headless unless `--trust-untrusted`; normal local flow never asks)
+- [ ] `internal/core`: 2-stage KV-friendly context ceiling (≥75% trim superseded reads & stale test output to short refs; ≥85% clean state handoff to fresh prefix; `events.jsonl` keeps everything)
+- [ ] `internal/core` + `cmd/pu run`: register `exec` and `plan` tools (alphabetical Layer 2), final report JSON (status, turns, raw tokens, notional cost, wall time, files changed, evidence)
 
-- [x] `go.mod`, `internal/catalog`, `internal/provider`, `internal/store`, `internal/exec`, `cmd/pu` (`doctor` + stubs)
-- [x] All M1 done-when gates green, including live `TestSmokeOpenCodeGo` (`deepseek-v4.1-flash`, `reasoning_effort = "low"`, `in=38 out=16 total=54`)
+### M4 Done-when gates
+- [ ] `exec`-modified files stale earlier evidence
+- [ ] Child env contains no API keys/tokens/secrets
+- [ ] Untrusted gate blocks in headless and never fires in local flow
+- [ ] SIGINT leaves no orphan processes
+- [ ] Budget exhaustion never reports `completed`
+- [ ] Compaction at 75% and 85% loses nothing from `events.jsonl`
+- [ ] `go vet ./...`, `go test ./...`, and `CGO_ENABLED=0` release build pass
+
+## M5 Checklist — Eval harness
+
+- [ ] `eval/`: task schema (`task.toml`: repo, commit, prompt, acceptance command, category), clean `git worktree` per run, alternating order (odd `jcode -> pu`, even `pu -> jcode`), same model/budget/timeout, append metrics to `results.jsonl`
+- [ ] `eval/`: report generator (success rates, median wall time, median notional cost & raw tokens per successful task, spec §12 Go/No-Go verdict)
+- [ ] `cmd/pu run`: hidden `--ablate=turn0,hashline,pinned-prefix,staged` switch
+- [ ] `eval/`: 3 sample tasks on a small toy repo + dry run producing `results.jsonl` and report (plus jcode adapter checked against `jcode --help` if installed)
+
+### M5 Done-when gates
+- [ ] Dry run produces `results.jsonl` and report for `pu` (and `jcode` if installed)
+- [ ] `go vet ./...`, `go test ./...`, and `CGO_ENABLED=0` release build pass
+
+## Completed Milestones
+
+### M1 — Skeleton and driver (merged)
+- Built `go.mod`, `internal/catalog`, `internal/provider` (`openai-chat-compat` SSE + `x-opencode-session`), `internal/store`, `internal/exec` (`ScrubEnv`), `cmd/pu` (`doctor`).
+- Live smoke test `TestSmokeOpenCodeGo` passed on `deepseek-v4.1-flash` (`reasoning_effort=low`).
+
+### M2 — Loop, read, search (merged)
+- Pre-M2 fixes: strict SSE EOF error without `[DONE]`/`finish_reason`, deterministic fallback tool-call ID (`call_<turn>_<index>`), `go mod tidy`.
+- Built `internal/core` (embedded `system.txt`, 4-layer KV-invariant prefix, Turn-0 fingerprint, single-writer loop, `errgroup` parallel tools, 64 KiB spill, budget limits), `internal/edit` (anchored `read` + revision tracker), `internal/search` (`rg` + `WalkDir` fallback), `cmd/pu run`.
+- Live 2-turn tool-call smoke test confirmed `deepseek-v4.1-flash` accepts `reasoning_content` in history (optional).
+
+### M3 — Edit and undo (merged)
+- Built `internal/edit/patch.go` (`hashline`, `search_replace`, `full_rewrite`, `create`, `delete`, strict revision/anchor lock with fresh-anchored rejection and ≤50 KiB fresh-anchored diff), `internal/edit/checkpoint.go` (`.pu/checkpoints/<session>/` + `manifest.json`, `UndoSession`, `DiffSession`), registered `patch` in `internal/core`, and wired `pu diff`/`pu undo` in `cmd/pu`.
+- Gates: `go vet ./...` PASS; `go test -v ./...` PASS (all 5 M3 gate tests in `internal/edit/patch_test.go` green); `CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o pu ./cmd/pu` PASS (7.2 MiB).
 
 ## Decisions
 
-- **OpenCode Go endpoint path & session header (verified live + against `GET https://opencode.ai/inference/go/v1/models` and docs)**: OpenAI chat-completions models (including the confirmed pilot model `deepseek-v4.1-flash`) use base URL `https://opencode.ai/inference/go/openai/v1` and `compatibility.reasoning_field = "reasoning_content"`. OpenCode Go requires a stable `x-opencode-session` header per conversation for routing and prompt caching; `provider.Request.SessionID` populates `x-opencode-session` when non-empty.
+- **OpenCode Go endpoint path & session header**: Chat-completions models (including pilot model `deepseek-v4.1-flash`) use `https://opencode.ai/inference/go/openai/v1`, `reasoning_content`, and require `x-opencode-session` (`provider.Request.SessionID`).
 - **Confirmed pilot model**: `deepseek-v4.1-flash` on OpenCode Go (`openai-chat-compat`) with `reasoning_param = "reasoning_effort"` and `reasoning_effort = "low"`.
-- **`reasoning_content` in assistant history on `deepseek-v4.1-flash` (verified live via `TestSmokeTwoTurnToolCallReasoningHistory`)**: **Accepted (optional)**. Turn 1 emitted `reasoning_content` alongside a tool call (`hasReasoning=true`, `in=314 cached=256 out=66`). Turn 2 succeeded both WITH `reasoning_content` preserved (`text="ORCHID-42"`, `in=403 cached=256 out=6`) and WITHOUT `reasoning_content` (`text="ORCHID-42"`, `in=378 cached=0 out=7`). Preserving `ReasoningPart` in assistant history is accepted cleanly and retains KV cache hits when reusing `x-opencode-session`.
-- **Notional list-price cost vs subscription billing**: Because OpenCode Go is a flat-rate subscription, local USD cost computed from `models.toml` prices is defined as **notional list-price cost** (used for apples-to-apples efficiency comparison and `--max-cost-usd` budgets). Every run report and journal usage event records **raw token counts** (`input_tokens`, `cached_input_tokens`, `output_tokens`) alongside notional list-price cost.
-- **Deterministic tool-call fallback ID**: If a streamed tool call arrives with an empty `id`, `internal/provider` assigns `call_<turn>_<index>` so history replay and tool results remain deterministic.
-- **Anchored read & revision table location**: Placed 5-letter line anchor generation and per-file SHA-256 revision tracking in `internal/edit` so M2 `read` and M3 `hashline` `patch` share the exact same anchor algorithm and revision state.
-- **Layer 3 project rules order**: At session start, `AGENTS.md` and `PU.md` (if present in repo root) are read once in fixed order (`AGENTS.md`, then `PU.md`) and pinned into Layer 3 without mid-session mutation.
-- **Output spill threshold**: Tool outputs exceeding 64 KiB (65,536 bytes) are written to `.pu/sessions/<id>/out/<call_id>.txt`; the model receives an excerpt (first 8 KiB + last 4 KiB) with byte/line count and file reference.
-- **`models.toml` schema**: Each `[models."<name>"]` table supports `driver`, `endpoint`, `auth` (`"env:VAR"` or `"none"`), `model`, `context_window`, `reasoning_param`, `reasoning_effort`, and `input_price_per_m` / `cached_input_price_per_m` / `output_price_per_m` (notional USD per 1M tokens).
-- **Usage cached-token fields**: Parser accepts both OpenAI `usage.prompt_tokens_details.cached_tokens` and DeepSeek-style `usage.prompt_cache_hit_tokens`.
+- **`reasoning_content` in assistant history on `deepseek-v4.1-flash`**: **Accepted (optional)** (verified live via `TestSmokeTwoTurnToolCallReasoningHistory`). Preserving `ReasoningPart` in assistant history succeeds and retains KV cache hits.
+- **Notional list-price cost vs subscription billing**: Local USD cost computed from `models.toml` prices is **notional list-price cost**; every report and journal usage event records **raw token counts** (`input_tokens`, `cached_input_tokens`, `output_tokens`) alongside it.
+- **Deterministic tool-call fallback ID**: Empty streamed tool-call IDs receive `call_<turn>_<index>`.
+- **Anchored read & revision table location**: 5-letter lowercase ASCII anchors (`[a-z]{5}`, unique per file even for identical lines) and SHA-256 revision tracking live in `internal/edit` so `read` and `patch` share one source of truth.
+- **Layer 3 project rules order**: `AGENTS.md`, then `PU.md` (read once at session start, never mutated mid-session).
+- **Output spill threshold**: Tool outputs > 64 KiB spill to `.pu/sessions/<id>/out/<call_id>.txt`.
 
 ## Open questions
 
-- **M5 pilot pacing vs OpenCode Go 5-hour usage limit**: OpenCode Go enforces a rolling 5-hour allowance (20% of monthly allowance) and weekly limit (50%). For the 30-task pilot in M5 (60 runs total across `pu` and `jcode`), the harness will need to handle or pace around `429` / rate-limit responses (or check `GET /inference/go/v1/usage`) so neither tool is penalized by mid-pilot throttling.
+- **M5 pilot pacing vs OpenCode Go 5-hour usage limit**: OpenCode Go enforces a rolling 5-hour allowance (20% of monthly allowance) and weekly limit (50%). The M5 harness should note/handle rate limits cleanly when running the real 30-task pilot.

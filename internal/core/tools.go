@@ -20,9 +20,14 @@ const (
 	spillTailBytes      = 4 * 1024
 )
 
-// Static M2 tool schemas (Layer 2). Always sorted alphabetically and serialized
+// Static tool schemas (Layer 2). Always sorted alphabetically and serialized
 // byte-identically on every turn to keep the KV prefix invariant.
-var m2ToolDefs = []provider.ToolDef{
+var coreToolDefs = []provider.ToolDef{
+	{
+		Name:        "patch",
+		Description: "Edit, create, or delete a repository file. Modes: hashline (default, strict 5-letter anchors), search_replace (exactly 1 match), full_rewrite, create, delete.",
+		Parameters:  json.RawMessage(`{"type":"object","properties":{"content":{"description":"Full file content for full_rewrite or create.","type":"string"},"expected_sha256":{"description":"Optional expected file sha256 (prefix >=8 hex chars or full) for revision lock.","type":"string"},"mode":{"description":"Patch mode: hashline (default), search_replace, full_rewrite, create, delete.","enum":["hashline","search_replace","full_rewrite","create","delete"],"type":"string"},"new_text":{"description":"Replacement text for search_replace.","type":"string"},"old_text":{"description":"Exact target text for search_replace (must match once).","type":"string"},"ops":{"description":"Line-anchored edit operations for hashline mode.","items":{"properties":{"end_anchor":{"type":"string"},"end_line":{"type":"integer"},"insert_after":{"type":"boolean"},"new_text":{"type":"string"},"start_anchor":{"type":"string"},"start_line":{"type":"integer"}},"required":["start_line","start_anchor","new_text"],"type":"object"},"type":"array"},"path":{"description":"Repo-relative file path.","type":"string"}},"required":["path"]}`),
+	},
 	{
 		Name:        "read",
 		Description: "Read a file with unique 5-letter line anchors and its revision/hash.",
@@ -37,8 +42,8 @@ var m2ToolDefs = []provider.ToolDef{
 
 // ToolDefs returns the alphabetically sorted tool definitions for Layer 2.
 func ToolDefs() []provider.ToolDef {
-	out := make([]provider.ToolDef, len(m2ToolDefs))
-	copy(out, m2ToolDefs)
+	out := make([]provider.ToolDef, len(coreToolDefs))
+	copy(out, coreToolDefs)
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out
 }
@@ -57,8 +62,19 @@ type searchArgs struct {
 	MaxResults int    `json:"max_results"`
 }
 
-func executeToolCall(ctx context.Context, repoRoot string, tracker *edit.Tracker, tc provider.ToolCallPart) (string, bool) {
+func executeToolCall(ctx context.Context, repoRoot string, tracker *edit.Tracker, cp *edit.Checkpointer, tc provider.ToolCallPart) (string, bool) {
 	switch tc.Name {
+	case "patch":
+		var req edit.PatchRequest
+		if err := json.Unmarshal([]byte(tc.Arguments), &req); err != nil {
+			return fmt.Sprintf("error: invalid patch arguments: %v", err), true
+		}
+		res, err := tracker.Patch(cp, req)
+		if err != nil {
+			return fmt.Sprintf("error: %v", err), true
+		}
+		return res.Format(), false
+
 	case "read":
 		var args readArgs
 		if err := json.Unmarshal([]byte(tc.Arguments), &args); err != nil {

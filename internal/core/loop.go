@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"golang.org/x/sync/errgroup"
@@ -56,6 +57,7 @@ type Report struct {
 	Tokens          provider.Usage `json:"tokens"`
 	NotionalCostUSD float64        `json:"notional_cost_usd"`
 	WallTimeMS      int64          `json:"wall_time_ms"`
+	FilesChanged    []string       `json:"files_changed,omitempty"`
 	FinalText       string         `json:"final_text,omitempty"`
 	Reason          string         `json:"reason,omitempty"`
 }
@@ -130,6 +132,8 @@ func Run(ctx context.Context, cfg Config, streamer Streamer, userPrompt string) 
 	})
 
 	tracker := edit.NewTracker(cfg.RepoRoot)
+	checkpointer := edit.NewCheckpointer(cfg.RepoRoot, cfg.SessionID)
+	var patchMu sync.Mutex
 
 	logEvent("session_start", map[string]any{
 		"session_id": cfg.SessionID,
@@ -150,6 +154,7 @@ func Run(ctx context.Context, cfg Config, streamer Streamer, userPrompt string) 
 			Tokens:          totalUsage,
 			NotionalCostUSD: totalCost,
 			WallTimeMS:      time.Since(startTime).Milliseconds(),
+			FilesChanged:    checkpointer.ChangedFiles(),
 			FinalText:       finalText,
 			Reason:          reason,
 		}
@@ -245,7 +250,15 @@ func Run(ctx context.Context, cfg Config, streamer Streamer, userPrompt string) 
 		for i, tc := range toolCalls {
 			i, tc := i, tc
 			eg.Go(func() error {
-				out, isErr := executeToolCall(egCtx, cfg.RepoRoot, tracker, tc)
+				var out string
+				var isErr bool
+				if tc.Name == "patch" {
+					patchMu.Lock()
+					out, isErr = executeToolCall(egCtx, cfg.RepoRoot, tracker, checkpointer, tc)
+					patchMu.Unlock()
+				} else {
+					out, isErr = executeToolCall(egCtx, cfg.RepoRoot, tracker, checkpointer, tc)
+				}
 				spilledContent, spilledPath, sErr := SpillOutput(cfg.RepoRoot, cfg.SessionID, tc.ID, out)
 				if sErr != nil {
 					spilledContent = fmt.Sprintf("error: spill output failed: %v", sErr)
