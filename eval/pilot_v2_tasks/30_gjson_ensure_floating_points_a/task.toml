@@ -1,0 +1,6 @@
+id = "30_gjson_ensure_floating_points_a"
+repo = "/home/quant/src/pilot_repos/gjson"
+commit = "eaae8c63338d6d71ea606b788243ca1c5b39a068"
+category = "large_file"
+prompt = "In this gjson repository: Ensure floating points are correctly being clipped. Casting overflowed floating point to integers using uint64() or int64() will behave different depending on cpu. Make the change in gjson.go and make sure the package's tests pass."
+acceptance = "git checkout 8d89927e -- gjson_test.go && go test ."

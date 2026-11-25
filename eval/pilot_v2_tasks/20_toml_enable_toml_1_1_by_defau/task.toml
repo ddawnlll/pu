@@ -1,0 +1,6 @@
+id = "20_toml_enable_toml_1_1_by_defau"
+repo = "/home/quant/src/pilot_repos/toml"
+commit = "e954445330492727c18483838a15f88a4fc2d03a"
+category = "feature_refactor"
+prompt = "In this toml repository: Enable TOML 1.1 by default. Make the change in lex.go, parse.go and make sure the package's tests pass."
+acceptance = "git checkout 52534926 -- decode_test.go toml_test.go && go test ."

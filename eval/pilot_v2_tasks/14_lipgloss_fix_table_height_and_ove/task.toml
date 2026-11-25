@@ -1,0 +1,6 @@
+id = "14_lipgloss_fix_table_height_and_ove"
+repo = "/home/quant/src/pilot_repos/lipgloss"
+commit = "bffdafb703dd8ff09fafe4e410d29c7673ef2fdb"
+category = "feature_refactor"
+prompt = "In this lipgloss repository: Height and overflow with wrapping content. The current algorithm which calculates the first and last visible rows does not take into account content wrapping (and has a number of other problematic edge cases). Make the change in list/list.go, table/resizing.go, table/table.go, terminal.go and make sure the package's tests pass."
+acceptance = "git checkout c289bad5 -- table/table_test.go && go test ./table"

@@ -1,0 +1,6 @@
+id = "28_sjson_no_change"
+repo = "/home/quant/src/pilot_repos/sjson"
+commit = "752368dfbbb11bc8ff0e777a6e1073c3ddd3c622"
+category = "no_change"
+prompt = "A user reports a possible bug in this sjson repository related to: \"fix delete key \"-1\" while sibling \"#\" key exists\". Investigate sjson.go; only make changes if a real bug exists."
+acceptance = "go test . && git diff --quiet"

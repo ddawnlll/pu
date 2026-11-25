@@ -1,0 +1,6 @@
+id = "24_pflag_fix_honour_deprecated_pa"
+repo = "/home/quant/src/pilot_repos/pflag"
+commit = "d19b08657e10e67b8a85fe4c7a2279bfefc902b1"
+category = "test_build"
+prompt = "In this pflag repository: Honour deprecated ParseErrorsWhitelist.UnknownFlagsHandling. Make the change in flag.go and make sure the package's tests pass."
+acceptance = "git checkout 94000ccc -- flag_test.go && go test ."

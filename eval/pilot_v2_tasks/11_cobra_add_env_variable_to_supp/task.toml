@@ -1,0 +1,6 @@
+id = "11_cobra_add_env_variable_to_supp"
+repo = "/home/quant/src/pilot_repos/cobra"
+commit = "236f3c0418a1912d32159ad9c0b74f3f03764f5d"
+category = "feature_refactor"
+prompt = "In this cobra repository: Add env variable to suppress completion descriptions on create. COBRA_COMPLETION_DESCRIPTIONS=0  or  <PROGRAM>_COMPLETION_DESCRIPTIONS=0 can now be used to disable shell completion descriptions. Make the change in active_help.go, completions.go and make sure the package's tests pass."
+acceptance = "git checkout e63925d3 -- completions_test.go && go test ."

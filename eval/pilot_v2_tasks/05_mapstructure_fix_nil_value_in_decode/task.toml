@@ -1,0 +1,6 @@
+id = "05_mapstructure_fix_nil_value_in_decode"
+repo = "/home/quant/src/pilot_repos/mapstructure"
+commit = "9aa3f77c68e2a56222ea436c1bfa631f1b1072d5"
+category = "bugfix"
+prompt = "In this mapstructure repository: Nil value in decode hooks. Make the change in decode_hooks.go and make sure the package's tests pass."
+acceptance = "git checkout cd52f897 -- decode_hooks_test.go && go test ."

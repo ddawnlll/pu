@@ -1,0 +1,6 @@
+id = "21_cobra_improve_api_to_get_flag"
+repo = "/home/quant/src/pilot_repos/cobra"
+commit = "890302a35f578311404a462b3cdd404f34db3720"
+category = "test_build"
+prompt = "In this cobra repository: Improve API to get flag completion function. The new API is simpler and matches the `c.RegisterFlagCompletionFunc()` API. Make the change in completions.go and make sure the package's tests pass."
+acceptance = "git checkout a0a6ae02 -- completions_test.go && go test ."

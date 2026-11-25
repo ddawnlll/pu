@@ -1,0 +1,6 @@
+id = "09_sjson_fix_deleting_keys_starti"
+repo = "/home/quant/src/pilot_repos/sjson"
+commit = "370e2e9baa331bcb84b70abad6b90258fd8535b9"
+category = "bugfix"
+prompt = "In this sjson repository: Fix deleting keys starting with double quote. Make the change in sjson.go and make sure the package's tests pass."
+acceptance = "git checkout 54fa3d47 -- sjson_test.go && go test ."

@@ -1,0 +1,6 @@
+id = "03_lipgloss_fix_color_expand_rgbcolo"
+repo = "/home/quant/src/pilot_repos/lipgloss"
+commit = "03215bc1cc942fffdeae41642944a9d68daca5d6"
+category = "bugfix"
+prompt = "In this lipgloss repository: Expand RGBColor channels to 16 bits. Make the change in color.go and make sure the package's tests pass."
+acceptance = "git checkout e3f05115 -- color_test.go && go test ."

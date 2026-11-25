@@ -1,0 +1,6 @@
+id = "15_lipgloss_feat_add_hyperlink_suppo"
+repo = "/home/quant/src/pilot_repos/lipgloss"
+commit = "19329a3e8410bba19b363bd6af0f4e4c3ae9e215"
+category = "feature_refactor"
+prompt = "In this lipgloss repository: Add hyperlink support. Make the change in get.go, set.go, style.go, unset.go and make sure the package's tests pass."
+acceptance = "git checkout c95c5f3c -- style_test.go && go test ."

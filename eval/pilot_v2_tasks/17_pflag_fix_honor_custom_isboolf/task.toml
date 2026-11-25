@@ -1,0 +1,6 @@
+id = "17_pflag_fix_honor_custom_isboolf"
+repo = "/home/quant/src/pilot_repos/pflag"
+commit = "6404d8209615987d23eafd5c38207dc343a5881e"
+category = "feature_refactor"
+prompt = "In this pflag repository: Honor custom IsBoolFlag compatibility. Make the change in bool.go, flag.go and make sure the package's tests pass."
+acceptance = "git checkout ad27a401 -- bool_test.go flag_test.go && go test ."

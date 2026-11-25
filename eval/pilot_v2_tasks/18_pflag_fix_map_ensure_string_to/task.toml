@@ -1,0 +1,6 @@
+id = "18_pflag_fix_map_ensure_string_to"
+repo = "/home/quant/src/pilot_repos/pflag"
+commit = "b85eb9e15911a41cd7c05d955503542e9befadf4"
+category = "feature_refactor"
+prompt = "In this pflag repository: Ensure string-to-string flags maintain stable pointers. This revision tweaks the internals of the StringToString flag type to ensure that pointers are consistent across invocations of FlagSet.Parse(), Flag.Set(), and FlagSet.GetStringToString(). Make the change in flag.go, golangflag.go, string_slice.go, string_to_string.go and make sure the package's tests pass."
+acceptance = "git checkout 4b232952 -- example_test.go string_to_string_test.go && go test ."

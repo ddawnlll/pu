@@ -1,0 +1,6 @@
+id = "22_lipgloss_fix_table_add_tests_fix"
+repo = "/home/quant/src/pilot_repos/lipgloss"
+commit = "b36834acd7c6412885a4e8b32791898ffd1abfe3"
+category = "test_build"
+prompt = "In this lipgloss repository: Add tests + fix scenario of offset + manual table height. Make the change in table/resizing.go, table/table.go and make sure the package's tests pass."
+acceptance = "git checkout 1427d827 -- table/table_test.go && go test ./table"

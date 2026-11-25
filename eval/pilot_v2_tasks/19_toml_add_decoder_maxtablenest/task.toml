@@ -1,0 +1,6 @@
+id = "19_toml_add_decoder_maxtablenest"
+repo = "/home/quant/src/pilot_repos/toml"
+commit = "8685fbaa86de2fdc5e180db21f4d3b0388bbb6ce"
+category = "feature_refactor"
+prompt = "In this toml repository: Add Decoder.MaxTableNesting; limit table nesting to 128 by default. toml currently allows infinite table nesting; a document in the form \"a.\u00ab10,000 more\u00bb = 1\" takes ~2 seconds to parse and uses 1.8G of memory. Make the change in decode.go, error.go, parse.go and make sure the package's tests pass."
+acceptance = "git checkout 2e90ced6 -- decode_test.go && go test ."

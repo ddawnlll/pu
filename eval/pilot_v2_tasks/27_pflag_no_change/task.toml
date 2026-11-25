@@ -1,0 +1,6 @@
+id = "27_pflag_no_change"
+repo = "/home/quant/src/pilot_repos/pflag"
+commit = "7b3c6eb4194a1d06e9e0eec9c24860a9c0045ad2"
+category = "no_change"
+prompt = "A user reports a possible bug in this pflag repository related to: \"keep multi-line usage indent when too narrow to wrap\". Investigate flag.go; only make changes if a real bug exists."
+acceptance = "go test . && git diff --quiet"

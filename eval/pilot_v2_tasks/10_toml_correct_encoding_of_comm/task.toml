@@ -1,0 +1,6 @@
+id = "10_toml_correct_encoding_of_comm"
+repo = "/home/quant/src/pilot_repos/toml"
+commit = "75a4f17a6da92eb899b599eafc43a2e7ddd76fc2"
+category = "bugfix"
+prompt = "In this toml repository: Correct encoding of comma when nested inline table ends with map. The map is in fieldsSub, so when iterating over fieldsDirect the length check would think it's \"last\" and won't write the comma, whereas on the second writeFields() call the test would fail and it would (wrongly) write the comma. Make the change in encode.go and make sure the package's tests pass."
+acceptance = "git checkout d10101f4 -- encode_test.go && go test ."

@@ -1,0 +1,6 @@
+id = "26_mapstructure_no_change"
+repo = "/home/quant/src/pilot_repos/mapstructure"
+commit = "52aa5c6dc1d27226460807054ca2107b2d54fb2d"
+category = "no_change"
+prompt = "A user reports a possible bug in this mapstructure repository related to: \"remove value from error messages\". Investigate errors.go; only make changes if a real bug exists."
+acceptance = "go test . && git diff --quiet"
