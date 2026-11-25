@@ -1,0 +1,6 @@
+id = "29_cobra_allow_linker_to_perform"
+repo = "/home/quant/src/pilot_repos/cobra"
+commit = "09d5664f34e3f7571560e48ccb74c8904b671e87"
+category = "large_file"
+prompt = "In this cobra repository: Allow linker to perform deadcode elimination for program using Cobra. Cobra, in its default configuration, will execute a template to generate help, usage and version outputs. Make the change in cobra.go, command.go, completions.go and make sure the package's tests pass."
+acceptance = "git checkout 611e16c3 -- cobra_test.go command_test.go && go test ."

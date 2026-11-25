@@ -1,0 +1,6 @@
+id = "08_serde_json_parse_uxxxx_escapes_fast"
+repo = "/home/quant/src/pilot_repos/serde_json"
+commit = "cf771a0471dd797b6fead77e767f2f7943740c98"
+category = "bugfix"
+prompt = "In this serde_json repository: Parse \\uXXXX escapes faster. When ignoring *War and Peace* (in Russian), this increases performance from 640 MB/s to 1080 MB/s (+70%). Make the change in src/read.rs and make sure the package's tests pass."
+acceptance = "git checkout 86d0e114 -- tests/test.rs && CARGO_TARGET_DIR=/home/quant/src/pilot_repos/.cargo-target cargo test --test test"

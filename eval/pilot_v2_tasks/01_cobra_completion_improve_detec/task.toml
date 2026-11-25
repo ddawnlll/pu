@@ -1,0 +1,6 @@
+id = "01_cobra_completion_improve_detec"
+repo = "/home/quant/src/pilot_repos/cobra"
+commit = "d1e9d85fcf592461f3bc2f4b6d5e140c4c0aabf8"
+category = "bugfix"
+prompt = "In this cobra repository: Completion: improve detection for flags that accept multiple values. The completion code attempts to detect whether a flag can be specified more than once, and therefore should provide completion even if already set. Make the change in completions.go and make sure the package's tests pass."
+acceptance = "git checkout 0745e557 -- completions_test.go && go test ."

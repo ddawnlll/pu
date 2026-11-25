@@ -1,0 +1,6 @@
+id = "07_pflag_implement_slicevalue_for"
+repo = "/home/quant/src/pilot_repos/pflag"
+commit = "44b0d4763618e33d0df000d727f3c8b05d1cb4a4"
+category = "bugfix"
+prompt = "In this pflag repository: Implement SliceValue for ipNetSlice. Make the change in ipnet_slice.go and make sure the package's tests pass."
+acceptance = "git checkout fa02ca0a -- ipnet_slice_test.go && go test ."

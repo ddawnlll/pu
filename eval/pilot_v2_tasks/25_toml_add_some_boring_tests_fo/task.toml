@@ -1,0 +1,6 @@
+id = "25_toml_add_some_boring_tests_fo"
+repo = "/home/quant/src/pilot_repos/toml"
+commit = "6011ef0c32b214ac134b8228af2a667e171dad6e"
+category = "test_build"
+prompt = "In this toml repository: Add some boring tests for lex.go. This doesn't really need tests IMO, but easy enough to write. Make the change in lex.go and make sure the package's tests pass."
+acceptance = "git checkout b535ff89 -- lex_test.go && go test ."

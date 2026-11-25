@@ -1,0 +1,6 @@
+id = "16_mapstructure_refactor_update"
+repo = "/home/quant/src/pilot_repos/mapstructure"
+commit = "9a861bc115f2b54ed4e494662f29c172d9ef046a"
+category = "feature_refactor"
+prompt = "In this mapstructure repository: Update. Make the change in decode_hooks.go, errors.go and make sure the package's tests pass."
+acceptance = "git checkout 86ed5b59 -- decode_hooks_test.go && go test ."

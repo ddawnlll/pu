@@ -1,0 +1,6 @@
+id = "02_cobra_don_t_complete_help_flag"
+repo = "/home/quant/src/pilot_repos/cobra"
+commit = "8b1eba47616566fc4d258a93da48d5d8741865f0"
+category = "bugfix"
+prompt = "In this cobra repository: Don't complete --help flag when flag parsing disabled. When a command sets `DisableFlagParsing = true` it requests the responsibility of doing all the flag parsing. Make the change in completions.go and make sure the package's tests pass."
+acceptance = "git checkout b711e876 -- completions_test.go && go test ."

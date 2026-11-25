@@ -1,0 +1,6 @@
+id = "13_lipgloss_feat_add_fitcontent_prop"
+repo = "/home/quant/src/pilot_repos/lipgloss"
+commit = "4d114b4b2eb0d3828f2739ad33f8747280e63c5a"
+category = "feature_refactor"
+prompt = "In this lipgloss repository: Add `FitContent` property to table renderer. Make the change in table/resizing.go, table/table.go and make sure the package's tests pass."
+acceptance = "git checkout 6a419c65 -- table/table_test.go && go test ./table"

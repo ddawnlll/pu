@@ -1,0 +1,6 @@
+id = "06_mapstructure_feat_add_back_previous_s"
+repo = "/home/quant/src/pilot_repos/mapstructure"
+commit = "3caca3614c3ab2c5b5d359c44fdcd72058887b19"
+category = "bugfix"
+prompt = "In this mapstructure repository: Add back previous StringToSlice as a weak function. Make the change in decode_hooks.go and make sure the package's tests pass."
+acceptance = "git checkout 17cdcb07 -- decode_hooks_test.go && go test ."

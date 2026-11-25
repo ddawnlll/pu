@@ -1,0 +1,6 @@
+id = "23_pflag_fix_report_the_flag_name"
+repo = "/home/quant/src/pilot_repos/pflag"
+commit = "c966cfef47379dcb01e7929504d66d94b540945b"
+category = "test_build"
+prompt = "In this pflag repository: Report the flag name as typed in deprecation warnings. When a NormalizeFunc aliases a flag name, using the alias for a deprecated flag printed the canonical name rather than the one the user typed. Make the change in flag.go and make sure the package's tests pass."
+acceptance = "git checkout 6f1cdf1e -- flag_test.go && go test ."

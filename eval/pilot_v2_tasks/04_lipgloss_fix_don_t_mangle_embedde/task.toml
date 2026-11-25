@@ -1,0 +1,6 @@
+id = "04_lipgloss_fix_don_t_mangle_embedde"
+repo = "/home/quant/src/pilot_repos/lipgloss"
+commit = "092b7f46080f77d6ad583a94c53008d117fe4a03"
+category = "bugfix"
+prompt = "In this lipgloss repository: Don't mangle embedded ANSI when styling spaces. Make the change in style.go and make sure the package's tests pass."
+acceptance = "git checkout ce49a2aa -- embedded_ansi_test.go && go test ."

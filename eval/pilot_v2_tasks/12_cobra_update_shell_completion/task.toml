@@ -1,0 +1,6 @@
+id = "12_cobra_update_shell_completion"
+repo = "/home/quant/src/pilot_repos/cobra"
+commit = "b9ca5949e2f58373e8e4c3823c213401f7d9d0e3"
+category = "feature_refactor"
+prompt = "In this cobra repository: Update shell completion to respect flag groups. Make the change in completions.go, flag_groups.go and make sure the package's tests pass."
+acceptance = "git checkout 5f2ec3c8 -- completions_test.go && go test ."
