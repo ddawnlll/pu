@@ -3,7 +3,6 @@ package core
 import (
 	"context"
 	_ "embed"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -342,7 +341,7 @@ func Run(ctx context.Context, cfg Config, streamer Streamer, userPrompt string) 
 						names[i] = fmt.Sprintf("%s (%s, status=%s)", s.ID, s.Title, s.Status)
 					}
 					contMsg := fmt.Sprintf(
-						"Open plan steps remain without current passing evidence: %s. Complete and verify them on the current file revision, or mark the plan blocked if you cannot proceed.",
+						"Open plan steps remain without current evidence that covers the changed behaviour: %s. A passing check counts only if the same command failed earlier in this session (e.g. a test you added that failed before the fix), or it is the existing test named in the step's check field. Add or name such a test and run it on the current revision, or mark the plan blocked if you cannot proceed.",
 						strings.Join(names, "; "),
 					)
 					logEvent("open_step_continuation", map[string]any{
@@ -421,19 +420,6 @@ func Run(ctx context.Context, cfg Config, streamer Streamer, userPrompt string) 
 			return finish(StatusBlocked, "", "exec blocked: untrusted external content in context (pass --trust-untrusted to override)"), nil
 		}
 
-		// Once a targeted verification check passes on the current revision after
-		// changes and no plan steps remain open, end immediately as completed
-		// instead of spending extra turns on redundant checks.
-		if !planMgr.IsBlocked() && len(checkpointer.ChangedFiles()) > 0 && len(planMgr.OpenSteps()) == 0 {
-			if passedCmd := passedCheckInTurn(toolCalls, outcomes, planMgr); passedCmd != "" {
-				logEvent("early_complete_on_green_check", map[string]any{
-					"turn": turns,
-					"cmd":  passedCmd,
-				})
-				return finish(StatusCompleted, fmt.Sprintf("Completed: verification check passed on current revision (%s).", passedCmd), ""), nil
-			}
-		}
-
 		resultParts := make([]provider.ContentPart, len(results))
 		for i := range results {
 			resultParts[i] = results[i]
@@ -443,55 +429,4 @@ func Run(ctx context.Context, cfg Config, streamer Streamer, userPrompt string) 
 			Parts: resultParts,
 		})
 	}
-}
-
-func passedCheckInTurn(toolCalls []provider.ToolCallPart, outcomes []toolExecOutcome, planMgr *plan.Manager) string {
-	for _, oc := range outcomes {
-		if oc.isError {
-			return ""
-		}
-	}
-	var ranCheckCmd string
-	for i, tc := range toolCalls {
-		if tc.Name != "exec" {
-			continue
-		}
-		var args execArgs
-		if json.Unmarshal([]byte(tc.Arguments), &args) != nil {
-			continue
-		}
-		if !outcomes[i].isError && isVerificationCmd(args.Command) {
-			ranCheckCmd = strings.TrimSpace(args.Command)
-		}
-	}
-	if ranCheckCmd == "" {
-		return ""
-	}
-	snap := planMgr.Snapshot()
-	for i := len(snap.Evidence) - 1; i >= 0; i-- {
-		ev := snap.Evidence[i]
-		if ev.Validity == "current" && ev.ExitCode == 0 && strings.TrimSpace(ev.Cmd) == ranCheckCmd {
-			return ranCheckCmd
-		}
-	}
-	return ""
-}
-
-func isVerificationCmd(cmd string) bool {
-	lower := strings.ToLower(strings.TrimSpace(cmd))
-	if lower == "" {
-		return false
-	}
-	tokens := []string{
-		"go test", "go vet", "go build",
-		"cargo test", "cargo check", "cargo clippy",
-		"bun test", "npm test", "pnpm test", "yarn test", "npx vitest", "npx jest",
-		"pytest", "python -m unittest", "python3 -m unittest",
-	}
-	for _, tok := range tokens {
-		if strings.Contains(lower, tok) {
-			return true
-		}
-	}
-	return false
 }

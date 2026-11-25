@@ -39,7 +39,7 @@ var coreToolDefs = []provider.ToolDef{
 	{
 		Name:        "plan",
 		Description: "Create or update the short task plan mirrored to .pu/plan.json.",
-		Parameters:  json.RawMessage(`{"type":"object","properties":{"goal":{"description":"Short task goal.","type":"string"},"status":{"description":"Plan status: in_progress, completed, blocked.","enum":["in_progress","completed","blocked"],"type":"string"},"steps":{"description":"Ordered plan steps.","items":{"properties":{"depends_on":{"items":{"type":"string"},"type":"array"},"files":{"items":{"type":"string"},"type":"array"},"id":{"type":"string"},"status":{"enum":["pending","in_progress","done","blocked"],"type":"string"},"title":{"type":"string"}},"required":["id","title","status"],"type":"object"},"type":"array"}},"required":["steps"]}`),
+		Parameters:  json.RawMessage(`{"type":"object","properties":{"goal":{"description":"Short task goal.","type":"string"},"status":{"description":"Plan status: in_progress, completed, blocked.","enum":["in_progress","completed","blocked"],"type":"string"},"steps":{"description":"Ordered plan steps.","items":{"properties":{"depends_on":{"items":{"type":"string"},"type":"array"},"files":{"items":{"type":"string"},"type":"array"},"id":{"type":"string"},"check":{"description":"Existing test command that exercises this step's behaviour, if any.","type":"string"},"status":{"enum":["pending","in_progress","done","blocked"],"type":"string"},"title":{"type":"string"}},"required":["id","title","status"],"type":"object"},"type":"array"}},"required":["steps"]}`),
 	},
 	{
 		Name:        "read",
@@ -177,6 +177,7 @@ func executeToolCall(
 			return toolExecOutcome{output: fmt.Sprintf("error: %v", err), isError: true}
 		}
 		planMgr.InvalidateForFiles([]string{res.Path})
+		planMgr.MarkEdited()
 		return toolExecOutcome{
 			output: res.Format(),
 			meta:   toolResultMeta{toolName: "patch", path: res.Path},
