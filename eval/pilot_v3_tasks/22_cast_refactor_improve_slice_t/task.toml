@@ -1,0 +1,6 @@
+id = "22_cast_refactor_improve_slice_t"
+repo = "/home/quant/src/pilot_repos/cast"
+commit = "2aefdef876fb1e1c69943d4a0fb95ce8eebc7f7d"
+category = "test_build"
+prompt = "In this cast repository: Improve slice tests, add pointer support. (PR title: \"Slice improvements\") Make the change in slice.go and make sure the package's tests pass."
+acceptance = "git checkout c0ba9514 -- slice_test.go && go test ."

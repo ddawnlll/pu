@@ -1,0 +1,6 @@
+id = "29_cast_add_unsigned_integer_sup"
+repo = "/home/quant/src/pilot_repos/cast"
+commit = "e9ba3ce83919192b29c67da5bec158ce024fdcdb"
+category = "large_file"
+prompt = "In this cast repository: Add unsigned integer support in ToStringSliceE function. Make the change in caste.go and make sure the package's tests pass."
+acceptance = "git checkout b7a72fcc -- cast_test.go && go test ."

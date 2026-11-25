@@ -1,0 +1,6 @@
+id = "23_cast_refactor_improve_time_te"
+repo = "/home/quant/src/pilot_repos/cast"
+commit = "e8b37323a2025fb4e9eb36c1418e490a23a775df"
+category = "test_build"
+prompt = "In this cast repository: Improve time tests. (PR title: \"Test improvements\") Make the change in internal/time.go, internal/timeformattype_string.go, time.go, timeformattype_string.go and make sure the package's tests pass."
+acceptance = "git checkout cd8c9c35 -- cast_test.go time_test.go && go test ."

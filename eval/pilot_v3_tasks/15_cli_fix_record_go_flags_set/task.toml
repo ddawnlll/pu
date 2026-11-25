@@ -1,0 +1,6 @@
+id = "15_cli_fix_record_go_flags_set"
+repo = "/home/quant/src/pilot_repos/cli"
+commit = "bd73abc74526e2f10eac2c64743f8dad85915e46"
+category = "feature_refactor"
+prompt = "In this cli repository: Record Go flags set on the command line in flag.CommandLine. (PR title: \"report AllowExtFlags flags as set, and fix related gaps\") extFlag.Set called the Value's Set directly, so flag.Visit never saw a Go flag from AllowExtFlags that the command line set, and code that relies on it, e.g. Make the change in command_setup.go, flag_ext.go and make sure the package's tests pass."
+acceptance = "git checkout 89fb8488 -- flag_ext_test.go flag_int_test.go flag_uint_test.go && go test ."

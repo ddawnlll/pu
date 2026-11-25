@@ -1,0 +1,6 @@
+id = "11_afero_zipfs_support_zip_files"
+repo = "/home/quant/src/pilot_repos/afero"
+commit = "22177ff6c4f5183fd7050c2d0d4c9dfd053afb67"
+category = "feature_refactor"
+prompt = "In this afero repository: Zipfs: support zip files without explicit directory entries. (issue title: \"zipfs cannot read some directories\") Some zip producers (Java tools, etc.) omit directory entries. Make the change in zipfs/file.go, zipfs/fs.go and make sure the package's tests pass."
+acceptance = "git checkout d4f7abb6 -- zipfs/zipfs_test.go && go test ./zipfs"

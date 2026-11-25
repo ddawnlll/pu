@@ -1,0 +1,6 @@
+id = "26_afero_no_change"
+repo = "/home/quant/src/pilot_repos/afero"
+commit = "d2bffea700c045694727c3172ad6521da4e218b0"
+category = "no_change"
+prompt = "A user reports a possible bug in this afero repository related to: \"Keep file contents unchanged on empty writes past EOF\". Investigate mem/file.go; only make changes if a real bug exists."
+acceptance = "go test . && git diff --quiet"

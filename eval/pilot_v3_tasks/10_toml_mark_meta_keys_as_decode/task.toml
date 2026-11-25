@@ -1,0 +1,6 @@
+id = "10_toml_mark_meta_keys_as_decode"
+repo = "/home/quant/src/pilot_repos/toml"
+commit = "8323983708e9282360078a9050deb4ee30a45250"
+category = "bugfix"
+prompt = "In this toml repository: Mark meta keys as decoded when using Unmarshaler interface. (PR title: \"Set mapping keys to \"decoded\" when custom unmarshaler is used\"; issue title: \"Custom UnmarshalTOML() decoded keys left in meta.Undecoded()\") Keys were marked as \"Undecoded\" in the meta when using UnmarshalTOML from the Unmarshaler interface. Make the change in decode.go and make sure the package's tests pass."
+acceptance = "git checkout 6f7689d2 -- decode_test.go && go test ."

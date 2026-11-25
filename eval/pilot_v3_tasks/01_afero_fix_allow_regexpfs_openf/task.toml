@@ -1,0 +1,6 @@
+id = "01_afero_fix_allow_regexpfs_openf"
+repo = "/home/quant/src/pilot_repos/afero"
+commit = "768f1fb0e5535b77d90e44c531aacd652aabd96a"
+category = "bugfix"
+prompt = "In this afero repository: Allow RegexpFs OpenFile to create matching files. (issue title: \"afero.NewRegexpFs OpenFile error if file not exists\") Make the change in regexpfs.go and make sure the package's tests pass."
+acceptance = "git checkout 36101d9a -- regexpfs_test.go && go test ."

@@ -1,0 +1,6 @@
+id = "05_kong_fix_accept_typed_duratio"
+repo = "/home/quant/src/pilot_repos/kong"
+commit = "af6c65142cbcd8c86b11713721d6581bb9df4e07"
+category = "bugfix"
+prompt = "In this kong repository: Accept typed durations from resolvers. Returning `250 * time.Millisecond` from a `ResolverFunc` results in the following error when used with a flag of type `time.Duration`. Make the change in mapper.go and make sure the package's tests pass."
+acceptance = "git checkout d1a414be -- mapper_test.go && go test ."

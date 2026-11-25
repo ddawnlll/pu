@@ -1,0 +1,6 @@
+id = "21_afero_memmap_add_basic_read_wr"
+repo = "/home/quant/src/pilot_repos/afero"
+commit = "a7e88fd602b025af2525d200ba2a0ff337ea5fa0"
+category = "test_build"
+prompt = "In this afero repository: Memmap: add basic read/write permission enforcement to Open/OpenFile. (issue title: \"File permissions don't get checked by Open\") MemMapFs previously ignored file permissions entirely. Make the change in memmap.go and make sure the package's tests pass."
+acceptance = "git checkout ecf3363d -- memmap_test.go && go test ."

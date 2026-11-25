@@ -1,0 +1,6 @@
+id = "27_cli_no_change"
+repo = "/home/quant/src/pilot_repos/cli"
+commit = "d5c06cb04479eeacbbb9378ea26261b6be516320"
+category = "no_change"
+prompt = "A user reports a possible bug in this cli repository related to: \"omit ancestor flags when a fish command skips flag parsing / offer ancestors' persistent flags in the fish completion script\". Investigate fish.go; only make changes if a real bug exists."
+acceptance = "go test . && git diff --quiet"

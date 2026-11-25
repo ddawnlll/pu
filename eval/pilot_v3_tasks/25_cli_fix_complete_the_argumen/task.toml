@@ -1,0 +1,6 @@
+id = "25_cli_fix_complete_the_argumen"
+repo = "/home/quant/src/pilot_repos/cli"
+commit = "6898360ab3624054a58cd2cc2e90d1724f8eed1e"
+category = "test_build"
+prompt = "In this cli repository: Complete the arguments passed to Run at the root command. (issue title: \"Root command shell completion reads os.Args instead of the arguments passed to Run\") Shell completion on the root command read os.Args instead of the arguments passed to Run, while subcommands read their parsed arguments. Make the change in command_run.go, help.go and make sure the package's tests pass."
+acceptance = "git checkout 768449de -- completion_test.go && go test ."

@@ -1,0 +1,6 @@
+id = "02_afero_return_nil_after_success"
+repo = "/home/quant/src/pilot_repos/afero"
+commit = "768f1fb0e5535b77d90e44c531aacd652aabd96a"
+category = "bugfix"
+prompt = "In this afero repository: Return nil after successfully closing a UnionFile. Make the change in unionFile.go and make sure the package's tests pass."
+acceptance = "git checkout 0e7cde7b -- composite_test.go && go test ."

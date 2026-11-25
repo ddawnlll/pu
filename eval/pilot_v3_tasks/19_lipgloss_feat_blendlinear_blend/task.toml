@@ -1,0 +1,6 @@
+id = "19_lipgloss_feat_blendlinear_blend"
+repo = "/home/quant/src/pilot_repos/lipgloss"
+commit = "3f659a836c78f6ad31f5652571007cb4ab9d1eb8"
+category = "feature_refactor"
+prompt = "In this lipgloss repository: BlendLinear* -> Blend*. (PR title: \"color blending & other low-level color utilities\") Make the change in blending.go, examples/blending/linear-1d/bubbletea/main.go, examples/blending/linear-1d/standalone/main.go, examples/blending/linear-2d/bubbletea/main.go, examples/blending/linear-2d/standalone/main.go, examples/layout/main.go, examples/list/sublist/main.go and make sure the package's tests pass."
+acceptance = "git checkout 9a771f5a -- blending_test.go && go test ."

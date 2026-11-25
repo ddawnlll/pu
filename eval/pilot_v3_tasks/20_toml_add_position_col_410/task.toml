@@ -1,0 +1,6 @@
+id = "20_toml_add_position_col_410"
+repo = "/home/quant/src/pilot_repos/toml"
+commit = "5bcf18649ef059072b99f1505b63076c922df682"
+category = "feature_refactor"
+prompt = "In this toml repository: Add Position.Col. Previously it wasn't easy for users to get the Column information; this has to be calculated from the Start field, but this isn't convenient. Make the change in decode.go, error.go, parse.go and make sure the package's tests pass."
+acceptance = "git checkout 3cb6f887 -- error_test.go && go test ."

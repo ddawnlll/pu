@@ -1,0 +1,6 @@
+id = "17_kong_feat_support_negatable_b"
+repo = "/home/quant/src/pilot_repos/kong"
+commit = "bd34b5ff4d001c0666ac5413fe4269e2f5c95e18"
+category = "feature_refactor"
+prompt = "In this kong repository: Support negatable bool mappers. `negatable:\"\"` now supports usage with custom boolean values (IsBool), for both Decoder and MapperValue implementations. Make the change in build.go, context.go, mapper.go, tag.go and make sure the package's tests pass."
+acceptance = "git checkout 4e565e8d -- kong_test.go && go test ."

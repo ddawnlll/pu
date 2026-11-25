@@ -1,0 +1,6 @@
+id = "30_cobra_fix_help_text_for_runnab"
+repo = "/home/quant/src/pilot_repos/cobra"
+commit = "df547f5fc6ee86071f73c36c16afd885bb4e3f28"
+category = "large_file"
+prompt = "In this cobra repository: Fix help text for runnable plugin command. (PR title: \"Fixes and docs for usage as plugin\") When creating a plugin without sub commands, the help text included the command name (kubectl-plugin) instead of the display name (kubectl plugin):     Usage:       kubectl-plugin [flags] The issue is that the usage line for this case does not use the command path but the raw `Use` string, and this  Make the change in command.go and make sure the package's tests pass."
+acceptance = "git checkout a73b9c39 -- command_test.go && go test ."
