@@ -17,6 +17,8 @@ type Step struct {
 	Status    string   `json:"status"` // "pending", "in_progress", "done", "blocked"
 	Files     []string `json:"files,omitempty"`
 	DependsOn []string `json:"depends_on,omitempty"`
+	// Check optionally names an existing test command that covers this step.
+	Check string `json:"check,omitempty"`
 }
 
 // Evidence binds a verification command and exit code to a workspace revision.
@@ -31,6 +33,9 @@ type Evidence struct {
 	Files             []string `json:"files,omitempty"`
 	OutputRef         string   `json:"output_ref,omitempty"`
 	Validity          string   `json:"validity"` // "current", "stale", "failed"
+	// Covers is true when this passing check exercises changed behaviour: the
+	// same command failed earlier in the session (red -> green) after or before edits.
+	Covers bool `json:"covers,omitempty"`
 }
 
 // State is the serialized shape of .pu/plan.json (spec §05).
@@ -49,6 +54,18 @@ type Manager struct {
 	state    State
 	hasPlan  bool
 	nextEvID int
+	edited   bool
+	seenRed  map[string]bool
+}
+
+func normCmd(c string) string { return strings.Join(strings.Fields(c), " ") }
+
+// MarkEdited records that the agent changed workspace files. Once set, done
+// steps need evidence that covers the changed behaviour.
+func (m *Manager) MarkEdited() {
+	m.mu.Lock()
+	m.edited = true
+	m.mu.Unlock()
 }
 
 // NewManager creates a plan manager rooted at repoRoot.
@@ -102,9 +119,15 @@ func (m *Manager) RecordEvidence(cmd string, exitCode, revNum int, stepID, kind 
 	defer m.mu.Unlock()
 	m.nextEvID++
 	validity := "current"
+	nc := normCmd(cmd)
+	if m.seenRed == nil {
+		m.seenRed = map[string]bool{}
+	}
 	if exitCode != 0 {
 		validity = "failed"
+		m.seenRed[nc] = true
 	}
+	covers := exitCode == 0 && m.seenRed[nc]
 	ev := Evidence{
 		ID:                fmt.Sprintf("E%d", m.nextEvID),
 		Step:              stepID,
@@ -116,6 +139,7 @@ func (m *Manager) RecordEvidence(cmd string, exitCode, revNum int, stepID, kind 
 		Files:             slices.Clone(files),
 		OutputRef:         outputRef,
 		Validity:          validity,
+		Covers:            covers,
 	}
 	m.state.Evidence = append(m.state.Evidence, ev)
 	if m.hasPlan {
@@ -164,35 +188,45 @@ func (m *Manager) InvalidateForFiles(changedPaths []string) int {
 	return staled
 }
 
-// OpenSteps returns plan steps that are either not marked "done" OR lack current
-// passing evidence.
+// OpenSteps returns plan steps that are not "done" or lack current passing
+// evidence. After the agent edited files, evidence counts only if it covers the
+// changed behaviour: a red -> green check, or the step's named Check command.
+// A check that was only ever green (e.g. before any edit) does not count.
 func (m *Manager) OpenSteps() []Step {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if !m.hasPlan || len(m.state.Steps) == 0 {
+	steps := m.state.Steps
+	if !m.hasPlan || len(steps) == 0 {
 		return nil
 	}
 
-	hasAnyCurrentEvidence := false
-	stepHasCurrent := make(map[string]bool)
-	for _, ev := range m.state.Evidence {
-		if ev.Validity == "current" && ev.ExitCode == 0 {
-			hasAnyCurrentEvidence = true
-			if ev.Step != "" {
-				stepHasCurrent[ev.Step] = true
-			}
+	ok := func(ev Evidence, s Step) bool {
+		if ev.Validity != "current" || ev.ExitCode != 0 {
+			return false
 		}
+		if ev.Step != "" && ev.Step != s.ID {
+			return false
+		}
+		if !m.edited {
+			return true
+		}
+		return ev.Covers || (s.Check != "" && normCmd(s.Check) == normCmd(ev.Cmd))
 	}
 
 	var open []Step
-	for _, s := range m.state.Steps {
+	for _, s := range steps {
 		if s.Status != "done" {
 			open = append(open, s)
 			continue
 		}
-		// Done step must be backed by either step-specific current evidence or a
-		// workspace-wide current passing check.
-		if !stepHasCurrent[s.ID] && !hasAnyCurrentEvidence {
+		covered := false
+		for _, ev := range m.state.Evidence {
+			if ok(ev, s) {
+				covered = true
+				break
+			}
+		}
+		if !covered {
 			open = append(open, s)
 		}
 	}

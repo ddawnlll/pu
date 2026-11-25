@@ -9,10 +9,52 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math/rand/v2"
 	"net/http"
 	"sort"
+	"strconv"
 	"strings"
+	"time"
 )
+
+// Retry policy for transient overload responses (HTTP 429 / 529).
+const maxOverloadRetries = 3
+
+var (
+	retryBaseDelay = 1 * time.Second
+	retryMaxDelay  = 30 * time.Second
+	retrySleep     = func(ctx context.Context, d time.Duration) error {
+		t := time.NewTimer(d)
+		defer t.Stop()
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-t.C:
+			return nil
+		}
+	}
+)
+
+// retryDelay honours Retry-After (seconds or HTTP date) when present, otherwise
+// uses full-jitter exponential backoff: rand[0.5,1.0) * base * 2^attempt, capped.
+func retryDelay(h http.Header, attempt int, now time.Time) time.Duration {
+	if ra := strings.TrimSpace(h.Get("Retry-After")); ra != "" {
+		if secs, err := strconv.Atoi(ra); err == nil && secs >= 0 {
+			return min(time.Duration(secs)*time.Second, retryMaxDelay)
+		}
+		if t, err := http.ParseTime(ra); err == nil {
+			if d := t.Sub(now); d > 0 {
+				return min(d, retryMaxDelay)
+			}
+			return 0
+		}
+	}
+	d := retryBaseDelay << attempt
+	if d > retryMaxDelay {
+		d = retryMaxDelay
+	}
+	return time.Duration(float64(d) * (0.5 + 0.5*rand.Float64()))
+}
 
 const DefaultUserAgent = "pu/0.1.0-p0"
 
@@ -40,10 +82,23 @@ func (c *OpenAICompatClient) Stream(ctx context.Context, req Request, onEvent fu
 		return nil, fmt.Errorf("build request: %w", err)
 	}
 
+	// Retries happen inside one Stream call, so wait time never counts as a turn.
+	for attempt := 0; ; attempt++ {
+		resp, status, hdr, err := c.doOnce(ctx, req, bodyBytes, onEvent)
+		if (status != http.StatusTooManyRequests && status != 529) || attempt >= maxOverloadRetries {
+			return resp, err
+		}
+		if sErr := retrySleep(ctx, retryDelay(hdr, attempt, time.Now())); sErr != nil {
+			return nil, err
+		}
+	}
+}
+
+func (c *OpenAICompatClient) doOnce(ctx context.Context, req Request, bodyBytes []byte, onEvent func(StreamEvent)) (*Response, int, http.Header, error) {
 	url := strings.TrimRight(c.Endpoint, "/") + "/chat/completions"
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(bodyBytes))
 	if err != nil {
-		return nil, fmt.Errorf("create http request: %w", err)
+		return nil, 0, nil, fmt.Errorf("create http request: %w", err)
 	}
 
 	ua := c.UserAgent
@@ -66,16 +121,17 @@ func (c *OpenAICompatClient) Stream(ctx context.Context, req Request, onEvent fu
 	}
 	httpResp, err := hc.Do(httpReq)
 	if err != nil {
-		return nil, fmt.Errorf("http request: %w", err)
+		return nil, 0, nil, fmt.Errorf("http request: %w", err)
 	}
 	defer httpResp.Body.Close()
 
 	if httpResp.StatusCode < 200 || httpResp.StatusCode >= 300 {
 		errBody, _ := io.ReadAll(io.LimitReader(httpResp.Body, 4096))
-		return nil, fmt.Errorf("provider returned HTTP %d: %s", httpResp.StatusCode, strings.TrimSpace(string(errBody)))
+		return nil, httpResp.StatusCode, httpResp.Header, fmt.Errorf("provider returned HTTP %d: %s", httpResp.StatusCode, strings.TrimSpace(string(errBody)))
 	}
 
-	return parseOpenAISSE(httpResp.Body, req.Turn, onEvent)
+	resp, err := parseOpenAISSE(httpResp.Body, req.Turn, onEvent)
+	return resp, httpResp.StatusCode, httpResp.Header, err
 }
 
 func buildOpenAIChatRequest(req Request) ([]byte, error) {
