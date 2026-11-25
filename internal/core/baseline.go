@@ -35,7 +35,7 @@ func isTestCmd(cmd string) bool {
 // stays as strict as before: covering still means "fails without the change,
 // passes with it" on the same command.
 func autoBaseline(ctx context.Context, cp *edit.Checkpointer, planMgr *plan.Manager, cmd string, timeout time.Duration, ev plan.Evidence) string {
-	if ev.ExitCode != 0 || ev.Covers || !isTestCmd(cmd) || planMgr.SeenRed(cmd) {
+	if ev.ExitCode != 0 || ev.Covers || !isTestCmd(cmd) || planMgr.SeenRed(cmd) || !needsCoverage(planMgr) {
 		return ""
 	}
 	tests := cp.ChangedTestFiles()
@@ -55,5 +55,16 @@ func autoBaseline(ctx context.Context, cp *edit.Checkpointer, planMgr *plan.Mana
 		planMgr.MarkFailedBefore(ev.ID)
 		return fmt.Sprintf("[baseline: same command fails with your non-test changes reverted (exit %d); %s covers the change]\n", res.ExitCode, ev.ID)
 	}
-	return "[baseline: same command also passes with your non-test changes reverted, so it does not yet cover the change]\n"
+	return ""
+}
+
+// needsCoverage reports whether some plan step marked done still lacks
+// covering evidence, i.e. the baseline result could change completion.
+func needsCoverage(pm *plan.Manager) bool {
+	for _, s := range pm.OpenSteps() {
+		if s.Status == "done" {
+			return true
+		}
+	}
+	return false
 }

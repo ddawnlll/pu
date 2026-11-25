@@ -76,7 +76,7 @@ func TestAutoBaselineDoesNotCoverTestThatAlsoPassesBefore(t *testing.T) {
 	cmd := "go test -run TestNoop ."
 	ev := pm.RecordEvidence(cmd, 0, 1, "", "", nil, "")
 	note := autoBaseline(context.Background(), cp, pm, cmd, time.Minute, ev)
-	if !strings.Contains(note, "does not yet cover") || len(pm.OpenSteps()) != 1 {
+	if note != "" || len(pm.OpenSteps()) != 1 {
 		t.Fatalf("test green before fix must not cover; note=%q", note)
 	}
 }
