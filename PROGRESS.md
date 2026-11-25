@@ -171,6 +171,17 @@ Current milestone: **P0 Complete (M1–M5 merged to `main`)** — ready for the 
   4. `22_tetik_xtask_archive` (`pu` win, correctness + speed): `pu` passed in 59.6s / 8 turns / $0.00454 while `jcode` failed in 97.4s / 15 turns / $0.00791.
   5. `02_lipgloss_tree_nil` (`pu` win, speed + cost): both passed, with `pu` finishing 303.6s faster (158.9s vs 462.5s) and 31% cheaper ($0.01525 vs $0.02221); similarly `28_gjson_no_change_path` (`pu` 117.7s / $0.00829 vs `jcode` 420.4s / $0.03222, 3.6x faster and 3.9x cheaper).
 
+## pu freeze v2 (evidence rule + 429 backoff)
+
+- **Motivation:** All 8 `pu` failures in Pilot v1 ended `agent_status=completed` with red acceptance (false completion), several not early (01: 432s, 19: 35 turns). `pu` stopped once an existing test was green, but nothing checked the new behaviour.
+- **Changes (`p0/pu-evidence`, commit `94eca17`):**
+  1. Removed Pilot v1's hard stop after a green `exec` (`passedCheckInTurn`/`isVerificationCmd` deleted). Back to the M4 rule: `completed` needs current evidence for every plan step, with up to 2 continuations.
+  2. Evidence must cover the change (`internal/plan`): once `pu` has patched files, a done step only counts as covered by a current passing check that either went red -> green in this session (same normalised command), or matches the step's new optional `check` field (an existing test the step names). A check that was only ever green doesn't count. One line added to Layer 1 (`system.txt`) and the continuation message.
+  3. `internal/provider`: retries HTTP 429/529 inside one `Stream` call (so the wait doesn't count as a turn). Honours `Retry-After` (seconds or HTTP date, capped at 30s), otherwise uses jittered exponential backoff `[0.5,1) x 1s x 2^n`, at most 3 retries.
+- **Tests:** `TestAlreadyGreenCheckDoesNotCoverChangedBehaviour`, `TestRedThenGreenCoversStep`, `TestNamedExistingCheckCoversStep`, `TestNoEditsAnyGreenCheckCounts`, `TestStreamRetries429ThenSucceeds`, `TestStreamGivesUpAfterThreeRetries`, `TestRetryDelayJitterBounds`. Removed obsolete `TestEarlyCompleteOnGreenCheckWithNoOpenSteps`.
+- **Verification:** `go vet` PASS, `go test ./...` PASS, release build OK. `eval/sample_tasks` `pu` 3/3. **Dev check on the 8 v1 failures (`pu` only): 5/8 now pass** (01, 12, 17, 19, 21). 04, 11 and 13 still fail, and all three still end as false completions. These tasks were used only as a dev check; no tuning was done on them after the run.
+- **Frozen `pu` commit for Pilot v2: `94eca17`.**
+
 ## Decisions
 
 - **OpenCode Go endpoint path & session header**: Chat-completions models (including pilot model `deepseek-v4.1-flash`) use `https://opencode.ai/inference/go/openai/v1`, `reasoning_content`, and require `x-opencode-session` (`provider.Request.SessionID`).
