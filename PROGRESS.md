@@ -198,6 +198,18 @@ Current milestone: **P0 Complete (M1–M5 merged to `main`)** — ready for the 
 - **Spec §12 verdict (30 paired, at least 25):** **NO-GO, narrowly.** `pu` matches `jcode` on success (96.7% each), but the spec's unpaired median gains are 13.2% (wall) and 14.3% (cost), both short of the 15% threshold. On the paired per-task ratio, `pu` is 16.2% faster, but §12 is defined on medians, so the verdict stays NO-GO.
 - **Caveats:** One run per tool per task, so a 1-2 point swing is within noise. `pu` gives up speed on `no_change` and `large_file` (more verification turns under the new evidence rule).
 
+## v2 repeat: pre-registered rule
+
+Written and committed before any repeat run. `pu` stays frozen at `94eca17`; the task set stays `eval/pilot_v2_tasks` (`e376391`).
+
+- **Runs:** each tool runs each v2 task 3 times in total: rep 1 = existing `eval/pilot_v2_results.jsonl`, reps 2 and 3 = new runs in `eval/pilot_v2_repeat_results.jsonl` (field `rep`). Same settings as v2: 15m timeout, 40 turns, $0.50 cap for `pu`, `provider_default`, concurrent pairs, `--parallel 2`, `--resume`.
+- **Pass:** a task counts as passed for a tool if it passes in at least 2 of its 3 runs.
+- **Per-task metrics:** per task and per tool, take the median wall time and median notional cost over the runs that passed.
+- **Paired comparison:** use tasks both tools passed (under the 2/3 rule). For each, compute the `pu/jcode` ratio of the per-task medians.
+- **Verdict (spec §12 bar):** **GO** if `pu`'s 2/3 success rate >= `jcode`'s AND (median per-task wall ratio <= 0.85 OR median per-task cost ratio <= 0.85); otherwise **NO-GO**. Requires >= 25 tasks with 3 valid runs per tool, else **INCOMPLETE**.
+- **Rate-limited/setup-error runs** are excluded and retried via `--resume`; they don't count as one of the 3.
+- **Secondary (doesn't decide the verdict):** per tool, total wall time and total notional cost across all runs (failures included) divided by the number of passed runs.
+
 ## Decisions
 
 - **OpenCode Go endpoint path & session header**: Chat-completions models (including pilot model `deepseek-v4.1-flash`) use `https://opencode.ai/inference/go/openai/v1`, `reasoning_content`, and require `x-opencode-session` (`provider.Request.SessionID`).
