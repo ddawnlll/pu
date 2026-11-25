@@ -101,6 +101,7 @@ type RunConfig struct {
 	Tools               []string // e.g. ["pu", "jcode"] or ["pu"]
 	Ablate              string
 	Rep                 int         // repetition index recorded on results; resume keys include it
+	SessionsDir         string      // if set, copy pu's .pu/sessions here per run before cleanup
 	Resume              bool        // skip (task_id, tool) already completed (non-rate_limited) in ResultsPath
 	Runner              AgentRunner // optional override for tests
 }
@@ -316,6 +317,14 @@ func runOne(ctx context.Context, tool string, orderIdx int, task Task, cfg RunCo
 		}
 	}
 	defer cleanup()
+	if cfg.SessionsDir != "" && tool == "pu" {
+		// Preserve pu's session journal (turn-level events) before the worktree is removed.
+		defer func() {
+			dst := filepath.Join(cfg.SessionsDir, fmt.Sprintf("%s__rep%d", task.ID, cfg.Rep))
+			_ = os.MkdirAll(dst, 0o755)
+			_ = osexec.Command("cp", "-r", filepath.Join(wtDir, ".pu", "sessions"), dst).Run()
+		}()
+	}
 
 	harnessTimeout := cfg.Timeout + cfg.HarnessTimeoutExtra
 	runCtx, cancel := context.WithTimeout(ctx, harnessTimeout+cfg.SigintGrace+5*time.Second)
@@ -349,6 +358,7 @@ func runOne(ctx context.Context, tool string, orderIdx int, task Task, cfg RunCo
 	accExit := -1
 	passed := false
 	if !rateLimited && agentStatus != "setup_error" {
+		fetchForAcceptance(task.Repo, wtDir)
 		accExit = runAcceptance(ctx, wtDir, task.Acceptance)
 		passed = accExit == 0
 	}
@@ -400,11 +410,21 @@ func defaultBudgetForTool(tool string, cfg RunConfig) BudgetSpec {
 	return b
 }
 
+// createWorktree builds an isolated checkout of commit that contains only the
+// commit's own history: no branches, tags, remotes or future commits, so the
+// agent can't read the upstream fix via git log/show. Future objects are
+// fetched in only for acceptance by fetchForAcceptance. Falls back to a plain
+// worktree if the isolated fetch fails (e.g. commit unreachable by fetch).
 func createWorktree(repoDir, commit string) (string, func(), error) {
 	tmpDir, err := os.MkdirTemp("", "pu-eval-wt-*")
 	if err != nil {
 		return "", nil, fmt.Errorf("mkdirtemp worktree: %w", err)
 	}
+	if isoErr := isolatedCheckout(repoDir, commit, tmpDir); isoErr == nil {
+		return tmpDir, func() { _ = os.RemoveAll(tmpDir) }, nil
+	}
+	_ = os.RemoveAll(tmpDir)
+	_ = os.MkdirAll(tmpDir, 0o755)
 	cmd := osexec.Command("git", "worktree", "add", "--detach", tmpDir, commit)
 	cmd.Dir = repoDir
 	if out, err := cmd.CombinedOutput(); err != nil {

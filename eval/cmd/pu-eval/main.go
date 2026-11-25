@@ -26,6 +26,7 @@ func main() {
 	toolsCSV := flag.String("tools", "pu,jcode", "comma-separated tools to run (e.g. pu,jcode or pu)")
 	ablate := flag.String("ablate", "", "optional hidden --ablate flags passed to pu")
 	rep := flag.Int("rep", 0, "repetition index recorded in results; --resume skips (task, tool, rep) already done")
+	sessionsDir := flag.String("sessions-dir", "", "copy pu session journals here (per task/rep) before worktree cleanup")
 	resume := flag.Bool("resume", false, "skip (task_id, tool) pairs already completed (non-rate_limited) in --out")
 	reportOnly := flag.Bool("report-only", false, "only print report from existing --out results.jsonl")
 	flag.Parse()
@@ -53,6 +54,7 @@ func main() {
 			Ablate:           *ablate,
 			Resume:           *resume,
 			Rep:              *rep,
+			SessionsDir:      *sessionsDir,
 		})
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "pu-eval: %v\n", err)
