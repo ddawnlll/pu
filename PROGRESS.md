@@ -225,6 +225,26 @@ Written and committed before any repeat run. `pu` stays frozen at `94eca17`; the
 - **Median turns (all runs):** `pu` 15, `jcode` 17.
 - **Secondary (all runs, failures included, divided by passed runs):** `pu` **115.3s, $0.01115** per pass; `jcode` **137.8s, $0.01231** per pass, so `pu` is 16% less time and 9% less cost per pass.
 
+## Phase B: turn breakdown and turn cut (v1, v2 are dev sets)
+
+- **Turn breakdown method:** `eval/turn_breakdown.py` classifies every model turn from `pu`'s `events.jsonl` by its tool calls. Precedence: continuation, edit (`patch`), test exec (before the first edit, after it, or full suite if >1 package/crate reported), git history (`git log/show` output), build/lint (exit line only), shell read (cat/grep/sed via exec), `read`, `search`, `plan`, final message. v2 session logs were regenerated with frozen `94eca17` (`pu` only, 1 run, `--sessions-dir`), because the harness had deleted them with the worktrees.
+- **v2 breakdown, frozen `94eca17` (30 sessions, 556 turns, median 16.5/session):** shell_read 26.6% (4.9/session), git_history 16.4% (3.0), read 13.7% (2.5), edit 13.1% (2.4), full_suite 7.7% (1.4), test_before_edit 7.4% (1.4), final 5.6%, test_after_edit 5.4% (1.0), search 2.5%, build_lint 0.9%, continuation 0.4%, plan 0.4%. Exploration (shell_read + git_history + read + search) takes 59% of turns. Verification takes 21%, continuations under 1%.
+- **Harness leak found and fixed (`eval/isolate.go`):** in 15/30 v2 sessions `pu` ran `git log/show` and read the upstream fix commit, because worktrees shared the source repo's refs. Each run now gets a fresh `git init` holding only the start commit's ancestry (fetched by SHA, no refs, tags or remotes). Branch heads are fetched under `refs/pu-eval-accept/*` only after the agent exits, for acceptance. Covered by `TestIsolatedCheckoutHidesFutureCommitsAndAcceptanceSeesThem`. All 30 v2 tasks' acceptance prefixes still resolve. Some v1 serde_json/tetik acceptances use `sh -c`/cargo forms the smoke check can't parse; they fall back to a plain worktree if isolation fails. **Remaining limitation:** both agents have network access. In at least one dev session (`14_lipgloss`), `pu` fetched upstream over the network and found the fix. This applies equally to `jcode` and isn't blocked.
+- **Change (`p0/turn-cut`, smallest that keeps the rule strict):**
+  1. **Auto baseline (`internal/core/baseline.go`, `internal/edit/baseline.go`):** when a test command passes, the agent has changed both test files and non-test files, a done plan step still lacks covering evidence, and the command never failed in-session, `pu` reruns the same command in a temporary git worktree. That worktree is the current workspace with `pu`'s non-test changes reverted to the pre-edit checkpoint (tests kept). If it fails there, the passing evidence is marked as covering (`MarkFailedBefore`), the same "fails without the change, passes with it" proof as before, with no model turn spent. If it also passes there, nothing changes and the step stays open. The workspace is never touched.
+  2. **Batching:** one Layer 1 prompt line says new tests needn't be run before the fix and independent checks should be combined in one exec.
+  3. Tests: `TestAutoBaselineMarksNewTestThatFailsBeforeFix`, `TestAutoBaselineDoesNotCoverTestThatAlsoPassesBefore`, `TestAutoBaselineSkipsWithoutChangedTests`.
+- **Verification:**
+  - `go vet`/`go test ./...` PASS; `eval/sample_tasks` 3/3.
+  - v2 dev, same isolated harness, `pu` only, 1 run: frozen `94eca17` **28/30**, median turns **19.5**, wall 81.5s. First turn-cut build (`d43f617`, baseline ran on every green test) 27/30, **21 turns**, wall 132s; its 87 "also passes" notes made the model re-verify. Final `e672110` (baseline only when a done step lacks coverage; silent when it also passes) **28/30**, **17 turns**, wall 84.2s, 1 false completion.
+  - Breakdown for `e672110` vs control: test_before_edit 1.00 -> 0.77/session, test_after_edit 0.67 -> 0.47, full_suite 1.27 -> 1.20, read 2.23 -> 1.97. Exploration via shell/git is unchanged (6.6 -> 7.3 and 2.8 -> 3.0/session).
+  - v1 dev with `d43f617`: 24/30. v1 wasn't rerun with `e672110`, to save time and quota.
+- **Frozen `pu` commit for Pilot v3: `e672110`.**
+
+## Pilot v3: pre-registered rule
+
+Committed before any v3 run. Same rule as "v2 repeat: pre-registered rule": set `eval/pilot_v3_tasks` (`7885e46`), `pu` frozen at `e672110`, `jcode` as installed. 3 runs per task per tool (`--rep 1..3`) into `eval/pilot_v3_results.jsonl`, same settings as v2, isolated harness for both tools. Pass = at least 2 of 3. Per-task medians over passing runs. Paired = both passed. GO iff `pu` 2/3 success >= `jcode`'s AND (median per-task wall ratio <= 0.85 OR cost ratio <= 0.85). At least 25 tasks with 3 valid runs per tool, else INCOMPLETE. Secondary (doesn't decide the verdict): total wall/cost across all runs / passed runs.
+
 ## Decisions
 
 - **OpenCode Go endpoint path & session header**: Chat-completions models (including pilot model `deepseek-v4.1-flash`) use `https://opencode.ai/inference/go/openai/v1`, `reasoning_content`, and require `x-opencode-session` (`provider.Request.SessionID`).
