@@ -1,0 +1,210 @@
+{
+ "0e7cde7b6a6aa61330485465e63f0991b5fa3230": [
+  [
+   "PR",
+   "Return nil after successfully closing a UnionFile"
+  ]
+ ],
+ "18596facc0cb00d023d7aa6329942a3c4de69296": [
+  [
+   "PR",
+   "fix: initialize default Usage function on NewFlagSet and Init"
+  ],
+  [
+   "issue",
+   "Usage function is not defined when creating a new flag set"
+  ]
+ ],
+ "1b425f3142c8c815d1af9725ee11fbc4cac86915": [
+  [
+   "PR",
+   "fix: indirection of typed nils"
+  ],
+  [
+   "issue",
+   "panic since v1.9.0 with nil string pointer"
+  ]
+ ],
+ "2e0142542529a9f16169b9958ebf8d9a4c11f6c0": [
+  [
+   "PR",
+   "feat: add decode hook for netip.Prefix"
+  ]
+ ],
+ "354e70d6d0762e6a54cfc45fe8d019d6087a4c00": [
+  [
+   "PR",
+   "(v2) feat: add underline style and color"
+  ]
+ ],
+ "36101d9aec5096ec864594105467cc6823b54981": [
+  [
+   "PR",
+   "fix: allow RegexpFs OpenFile to create matching files"
+  ],
+  [
+   "issue",
+   "afero.NewRegexpFs OpenFile error if file not exists"
+  ]
+ ],
+ "3cb6f887551617a704396567d99fa882c43f7841": [
+  [
+   "PR",
+   "Add Position.Col"
+  ]
+ ],
+ "4a8c4de92a08cb8c4d0ccde25d0671e7c9212635": [
+  [
+   "PR",
+   "Inline: replace newlines with a space, not empty string"
+  ],
+  [
+   "issue",
+   "Inline concatenates words from multiple lines"
+  ]
+ ],
+ "4e565e8d77272aa8d3ab6fe3c4f5abdb1beabc99": [
+  [
+   "PR",
+   "feat: Support negatable bool mappers"
+  ]
+ ],
+ "6f7689d2591e3da5f945ef556af0387f75d7199f": [
+  [
+   "PR",
+   "Set mapping keys to \"decoded\" when custom unmarshaler is used"
+  ],
+  [
+   "issue",
+   "Custom UnmarshalTOML() decoded keys left in meta.Undecoded()"
+  ]
+ ],
+ "768449de9791496963f172543cf4e691b30b18a6": [
+  [
+   "PR",
+   "fix: complete the arguments passed to Run at the root command"
+  ],
+  [
+   "issue",
+   "Root command shell completion reads os.Args instead of the arguments passed to Run"
+  ]
+ ],
+ "83e877f70c073bfc66eb03c9608caa813c8873f9": [
+  [
+   "PR",
+   "Keep file contents unchanged on empty writes past EOF"
+  ]
+ ],
+ "89fb848895a5a2687f70d1c40f0634f9daff3db1": [
+  [
+   "PR",
+   "fix: report AllowExtFlags flags as set, and fix related gaps"
+  ]
+ ],
+ "9a771f5a242df0acf862c7acd72124469eb4635a": [
+  [
+   "PR",
+   "feat: color blending & other low-level color utilities"
+  ]
+ ],
+ "9f1cbfdb58d36d76398c5040fa580087b3d3fb99": [
+  [
+   "issue",
+   "Set with a huge array index wraps to a wrong index or hangs allocating unbounded null padding"
+  ]
+ ],
+ "a5c9ee711b8fafaa0d70e8c3c6115893cde0a86a": [
+  [
+   "PR",
+   "Test improvements"
+  ]
+ ],
+ "a60008c6dae2b98a1fbec12d1aebd43ac5ab76e0": [
+  [
+   "PR",
+   "Add last-wins flag groups"
+  ]
+ ],
+ "a73b9c391a9489d20f5ee1480e75d3b99fc8c7e2": [
+  [
+   "PR",
+   "Fixes and docs for usage as plugin"
+  ]
+ ],
+ "af6c65142cbcd8c86b11713721d6581bb9df4e07": [
+  [
+   "PR",
+   "fix: reject default command flags before a sibling command"
+  ]
+ ],
+ "b7a72fccfa2d30ad2403b9b711eb03c4b5db2f77": [
+  [
+   "PR",
+   "Add unsigned integer support in ToStringSliceE function"
+  ]
+ ],
+ "c0ba9514f9505644247e6a949cd1f5499cb2904b": [
+  [
+   "PR",
+   "Slice improvements"
+  ]
+ ],
+ "c212c5ca4b62a9330a3b83bea35c233e7d2d4d57": [
+  [
+   "PR",
+   "fix: use the configured completion command name in its help"
+  ]
+ ],
+ "c81c46a015b48d9f79c73cc6f528f90eaabb0c7e": [
+  [
+   "PR",
+   "Add 'one required flag' group"
+  ]
+ ],
+ "ca8f45a916f9fdfa14b21238d43ebc972fbfcd26": [
+  [
+   "PR",
+   "fix: count runes, not bytes, when wrapping help text"
+  ]
+ ],
+ "cd8c9c354e856d12fcbe4f55773ba5b0e888e7bc": [
+  [
+   "PR",
+   "Test improvements"
+  ]
+ ],
+ "ce39339c4736717d043c160a8368a417b965130b": [
+  [
+   "PR",
+   "fix: offer ancestors' persistent flags in the fish completion script"
+  ]
+ ],
+ "d1a414becde56cbfa126c9496f6f4c3009c92ddd": [
+  [
+   "PR",
+   "fix: accept typed durations from resolvers"
+  ]
+ ],
+ "d4f7abb6ceb0680b31835c4616989c34e4b7b7f9": [
+  [
+   "issue",
+   "zipfs cannot read some directories"
+  ]
+ ],
+ "ecf3363d57ea86d39b373ddb388b701eb371600a": [
+  [
+   "issue",
+   "File permissions don't get checked by Open"
+  ]
+ ],
+ "fa4ea64dd5187a42d6bf419b06bd4f7349ed4027": [
+  [
+   "PR",
+   "fix: float string to number parsing"
+  ],
+  [
+   "issue",
+   "String to float regression"
+  ]
+ ]
+}

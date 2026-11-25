@@ -1,0 +1,6 @@
+id = "04_cobra_add_one_required_flag_gr"
+repo = "/home/quant/src/pilot_repos/cobra"
+commit = "dcb405a9399ed307eaa0e50f5cb1c290c8979dd4"
+category = "bugfix"
+prompt = "In this cobra repository: Add 'one required flag' group. Make the change in flag_groups.go and make sure the package's tests pass."
+acceptance = "git checkout c81c46a0 -- completions_test.go flag_groups_test.go && go test ."

@@ -1,0 +1,6 @@
+id = "18_lipgloss_fix_rename_underline_con"
+repo = "/home/quant/src/pilot_repos/lipgloss"
+commit = "5e542b8c69a0f20ea62b2caa422bbee5337fbb48"
+category = "feature_refactor"
+prompt = "In this lipgloss repository: Rename underline constants to be consistent with other style properties. (PR title: \"(v2) feat: add underline style and color\") Make the change in get.go, set.go, style.go and make sure the package's tests pass."
+acceptance = "git checkout 354e70d6 -- style_test.go && go test ."

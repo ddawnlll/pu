@@ -1,0 +1,6 @@
+id = "07_mapstructure_feat_add_decode_hook_for"
+repo = "/home/quant/src/pilot_repos/mapstructure"
+commit = "8cfa81661a59bc451102044543a5265f0b444f09"
+category = "bugfix"
+prompt = "In this mapstructure repository: Add decode hook for netip.Prefix. Make the change in decode_hooks.go and make sure the package's tests pass."
+acceptance = "git checkout 2e014254 -- decode_hooks_test.go && go test ."

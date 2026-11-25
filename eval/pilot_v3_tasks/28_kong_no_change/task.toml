@@ -1,0 +1,6 @@
+id = "28_kong_no_change"
+repo = "/home/quant/src/pilot_repos/kong"
+commit = "70cc170466b9985ead8fae6ad2fc6f9ffbc7e33e"
+category = "no_change"
+prompt = "A user reports a possible bug in this kong repository related to: \"reject default command flags before a sibling command\". Investigate context.go; only make changes if a real bug exists."
+acceptance = "go test . && git diff --quiet"

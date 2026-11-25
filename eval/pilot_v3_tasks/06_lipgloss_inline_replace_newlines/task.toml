@@ -1,0 +1,6 @@
+id = "06_lipgloss_inline_replace_newlines"
+repo = "/home/quant/src/pilot_repos/lipgloss"
+commit = "19f011f1cc573e5d2bf9d7a9c4f14d429647759e"
+category = "bugfix"
+prompt = "In this lipgloss repository: Inline: replace newlines with a space, not empty string. (issue title: \"Inline concatenates words from multiple lines\") Make the change in style.go and make sure the package's tests pass."
+acceptance = "git checkout 4a8c4de9 -- style_test.go && go test ."

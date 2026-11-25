@@ -1,0 +1,6 @@
+id = "16_kong_add_last_wins_flag_group"
+repo = "/home/quant/src/pilot_repos/kong"
+commit = "b778e12c066ce62e03f3eb1439fd003d6a4bbb25"
+category = "feature_refactor"
+prompt = "In this kong repository: Add last-wins flag groups. ## Summary Add a `lastwins:\"group\"` tag for ordered exclusive flag groups. Make the change in build.go, context.go, model.go, tag.go and make sure the package's tests pass."
+acceptance = "git checkout a60008c6 -- kong_test.go tag_test.go && go test ."

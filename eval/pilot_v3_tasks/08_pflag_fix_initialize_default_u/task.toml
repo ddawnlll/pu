@@ -1,0 +1,6 @@
+id = "08_pflag_fix_initialize_default_u"
+repo = "/home/quant/src/pilot_repos/pflag"
+commit = "046b0d889369e6f70ae31483dffad578ffb10e2e"
+category = "bugfix"
+prompt = "In this pflag repository: Initialize default Usage function on NewFlagSet and Init. (issue title: \"Usage function is not defined when creating a new flag set\") Make the change in flag.go and make sure the package's tests pass."
+acceptance = "git checkout 18596fac -- flag_test.go && go test ."

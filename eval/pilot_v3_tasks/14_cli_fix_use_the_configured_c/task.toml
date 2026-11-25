@@ -1,0 +1,6 @@
+id = "14_cli_fix_use_the_configured_c"
+repo = "/home/quant/src/pilot_repos/cli"
+commit = "6898360ab3624054a58cd2cc2e90d1724f8eed1e"
+category = "feature_refactor"
+prompt = "In this cli repository: Use the configured completion command name in its help. The completion command's description tells users to run \"<app> completion bash\", \"<app> completion zsh\" and \"<app> completion fish\", with \"completion\" written into the text. Make the change in command_setup.go, completion.go and make sure the package's tests pass."
+acceptance = "git checkout c212c5ca -- completion_test.go && go test ."

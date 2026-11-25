@@ -1,0 +1,6 @@
+id = "24_cast_test_add_pointer_tests_t"
+repo = "/home/quant/src/pilot_repos/cast"
+commit = "659da110d64284ed1a4a0d7b82bb0f194f22de75"
+category = "test_build"
+prompt = "In this cast repository: Add pointer tests to numbers. (PR title: \"Test improvements\") Make the change in number.go and make sure the package's tests pass."
+acceptance = "git checkout a5c9ee71 -- cast_test.go number_test.go && go test ."

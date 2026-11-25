@@ -1,0 +1,6 @@
+id = "03_cli_fix_count_runes_not_byte"
+repo = "/home/quant/src/pilot_repos/cli"
+commit = "d854bb40d9441bd4bfba5eee6e33034d9e4f47e4"
+category = "bugfix"
+prompt = "In this cli repository: Count runes, not bytes, when wrapping help text. wrapLine measured lines and words with len, so text with multi-byte characters wrapped well before the wrapAt column. Make the change in help.go and make sure the package's tests pass."
+acceptance = "git checkout ca8f45a9 -- help_test.go && go test ."

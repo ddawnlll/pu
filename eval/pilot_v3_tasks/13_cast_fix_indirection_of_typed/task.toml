@@ -1,0 +1,6 @@
+id = "13_cast_fix_indirection_of_typed"
+repo = "/home/quant/src/pilot_repos/cast"
+commit = "a79ffed9a6a3da62453e90f35784fc2b8d1b390b"
+category = "feature_refactor"
+prompt = "In this cast repository: Indirection of typed nils. (issue title: \"panic since v1.9.0 with nil string pointer\") Make the change in indirect.go, time.go and make sure the package's tests pass."
+acceptance = "git checkout 1b425f31 -- basic_test.go indirect_test.go time_test.go && go test ."

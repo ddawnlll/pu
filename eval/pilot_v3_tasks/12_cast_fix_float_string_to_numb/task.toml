@@ -1,0 +1,6 @@
+id = "12_cast_fix_float_string_to_numb"
+repo = "/home/quant/src/pilot_repos/cast"
+commit = "cb5df5f7f3cc70c3686e95064f90af9ca137ae93"
+category = "feature_refactor"
+prompt = "In this cast repository: Float string to number parsing. (issue title: \"String to float regression\") Make the change in cast.go, number.go and make sure the package's tests pass."
+acceptance = "git checkout fa4ea64d -- number_internal_test.go number_test.go && go test ."
