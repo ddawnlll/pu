@@ -40,6 +40,7 @@ type Result struct {
 	Category           string     `json:"category"`
 	Tool               string     `json:"tool"` // "pu" or "jcode"
 	OrderIndex         int        `json:"order_index"`
+	Rep                int        `json:"rep,omitempty"`
 	Model              string     `json:"model"`
 	ReasoningEffort    string     `json:"reasoning_effort,omitempty"`
 	ReasoningEnforced  bool       `json:"reasoning_enforced"`
@@ -83,11 +84,11 @@ type AgentRunner func(ctx context.Context, tool, worktreeDir string, task Task, 
 
 // RunConfig configures an evaluation run.
 type RunConfig struct {
-	TasksDir        string
-	ResultsPath     string
-	Model           string
-	ModelsFile      string
-	ReasoningEffort string
+	TasksDir            string
+	ResultsPath         string
+	Model               string
+	ModelsFile          string
+	ReasoningEffort     string
 	MaxCostUSD          float64
 	MaxTurns            int
 	Timeout             time.Duration // tool timeout
@@ -99,6 +100,7 @@ type RunConfig struct {
 	JcodeTemplateHome   string   // optional pre-seeded JCODE_HOME template copied per run
 	Tools               []string // e.g. ["pu", "jcode"] or ["pu"]
 	Ablate              string
+	Rep                 int         // repetition index recorded on results; resume keys include it
 	Resume              bool        // skip (task_id, tool) already completed (non-rate_limited) in ResultsPath
 	Runner              AgentRunner // optional override for tests
 }
@@ -213,7 +215,7 @@ func RunAll(ctx context.Context, cfg RunConfig) ([]Result, error) {
 				if r.RateLimited || r.AgentStatus == "rate_limited" {
 					continue
 				}
-				completedKeys[r.TaskID+"\x00"+r.Tool] = true
+				completedKeys[fmt.Sprintf("%s\x00%s\x00%d", r.TaskID, r.Tool, r.Rep)] = true
 			}
 		}
 	}
@@ -245,7 +247,7 @@ func RunAll(ctx context.Context, cfg RunConfig) ([]Result, error) {
 			orderIdx int
 		}, 0, len(order))
 		for orderPos, tool := range order {
-			if cfg.Resume && completedKeys[task.ID+"\x00"+tool] {
+			if cfg.Resume && completedKeys[fmt.Sprintf("%s\x00%s\x00%d", task.ID, tool, cfg.Rep)] {
 				continue
 			}
 			pendingTools = append(pendingTools, struct {
@@ -304,6 +306,7 @@ func runOne(ctx context.Context, tool string, orderIdx int, task Task, cfg RunCo
 			Category:           task.Category,
 			Tool:               tool,
 			OrderIndex:         orderIdx,
+			Rep:                cfg.Rep,
 			Model:              cfg.Model,
 			ReasoningEffort:    cfg.ReasoningEffort,
 			Budget:             budget,
@@ -356,6 +359,7 @@ func runOne(ctx context.Context, tool string, orderIdx int, task Task, cfg RunCo
 		Category:           task.Category,
 		Tool:               tool,
 		OrderIndex:         orderIdx,
+		Rep:                cfg.Rep,
 		Model:              cfg.Model,
 		ReasoningEffort:    cfg.ReasoningEffort,
 		ReasoningEnforced:  outcome.ReasoningEnforced,

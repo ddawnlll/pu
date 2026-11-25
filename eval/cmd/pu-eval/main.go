@@ -25,6 +25,7 @@ func main() {
 	jcodeBin := flag.String("jcode-bin", "jcode", "path to jcode binary")
 	toolsCSV := flag.String("tools", "pu,jcode", "comma-separated tools to run (e.g. pu,jcode or pu)")
 	ablate := flag.String("ablate", "", "optional hidden --ablate flags passed to pu")
+	rep := flag.Int("rep", 0, "repetition index recorded in results; --resume skips (task, tool, rep) already done")
 	resume := flag.Bool("resume", false, "skip (task_id, tool) pairs already completed (non-rate_limited) in --out")
 	reportOnly := flag.Bool("report-only", false, "only print report from existing --out results.jsonl")
 	flag.Parse()
@@ -37,20 +38,21 @@ func main() {
 			}
 		}
 		_, err := eval.RunAll(context.Background(), eval.RunConfig{
-			TasksDir:        *tasksDir,
-			ResultsPath:     *outPath,
-			Model:           *model,
-			ModelsFile:      *modelsFile,
-			ReasoningEffort: *reasoningEffort,
+			TasksDir:         *tasksDir,
+			ResultsPath:      *outPath,
+			Model:            *model,
+			ModelsFile:       *modelsFile,
+			ReasoningEffort:  *reasoningEffort,
 			MaxCostUSD:       *maxCost,
 			MaxTurns:         *maxTurns,
 			Timeout:          *timeout,
 			MaxParallelTasks: *parallel,
 			PuBin:            *puBin,
-			JcodeBin:        *jcodeBin,
-			Tools:           tools,
-			Ablate:          *ablate,
-			Resume:          *resume,
+			JcodeBin:         *jcodeBin,
+			Tools:            tools,
+			Ablate:           *ablate,
+			Resume:           *resume,
+			Rep:              *rep,
 		})
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "pu-eval: %v\n", err)
