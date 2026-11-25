@@ -113,6 +113,35 @@ func (m *Manager) SetStatus(status string) {
 	}
 }
 
+// MarkFailedBefore records that evidence evID's command was shown to fail on
+// the pre-edit code (pu ran it itself against the checkpoint baseline), so the
+// passing result covers the changed behaviour just like a red -> green pair.
+func (m *Manager) MarkFailedBefore(evID string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for i := range m.state.Evidence {
+		ev := &m.state.Evidence[i]
+		if ev.ID == evID && ev.ExitCode == 0 {
+			if m.seenRed == nil {
+				m.seenRed = map[string]bool{}
+			}
+			m.seenRed[normCmd(ev.Cmd)] = true
+			ev.Covers = true
+			if m.hasPlan {
+				_ = m.persistLocked()
+			}
+			return
+		}
+	}
+}
+
+// SeenRed reports whether cmd has already failed in this session.
+func (m *Manager) SeenRed(cmd string) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.seenRed[normCmd(cmd)]
+}
+
 // RecordEvidence adds a verification evidence record bound to revNum.
 func (m *Manager) RecordEvidence(cmd string, exitCode, revNum int, stepID, kind string, files []string, outputRef string) Evidence {
 	m.mu.Lock()

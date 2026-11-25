@@ -153,6 +153,9 @@ func executeToolCall(
 			out += fmt.Sprintf("[exec modified tracked files: %s; prior evidence marked stale]\n", strings.Join(paths, ", "))
 		}
 		out += fmt.Sprintf("[evidence: %s %s rev%d]\n", ev.ID, ev.Validity, ev.RevisionNum)
+		if note := autoBaseline(ctx, cp, planMgr, args.Command, timeout, ev); note != "" {
+			out += note
+		}
 
 		return toolExecOutcome{
 			output:  out,
