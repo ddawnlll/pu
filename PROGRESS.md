@@ -182,6 +182,22 @@ Current milestone: **P0 Complete (M1–M5 merged to `main`)** — ready for the 
 - **Verification:** `go vet` PASS, `go test ./...` PASS, release build OK. `eval/sample_tasks` `pu` 3/3. **Dev check on the 8 v1 failures (`pu` only): 5/8 now pass** (01, 12, 17, 19, 21). 04, 11 and 13 still fail, and all three still end as false completions. These tasks were used only as a dev check; no tuning was done on them after the run.
 - **Frozen `pu` commit for Pilot v2: `94eca17`.**
 
+## Pilot v2 results (30/30 paired held-out tasks, valid)
+
+- **Run:** `eval/pilot_v2_tasks` (frozen `e376391` before any v2 run), `pu` frozen at `94eca17`, same settings as v1: 15m timeout (harness 15m30s, SIGINT then SIGKILL), 40 turns, $0.50 cap for `pu`, `provider_default`, `pu`+`jcode` concurrent per task, at most 2 tasks in parallel. Raw data: `eval/pilot_v2_results.jsonl`, analysis: `eval/analyze_v2.py`. 60/60 valid runs, **0 rate-limited, 0 setup errors, 0 timeouts**. Timeout parity verified: every row has `timeout_ms=900000`, `harness_timeout_ms=930000`. Ran 18:20-19:03 Istanbul.
+- **Success rate:** `pu` **29/30 (96.7%)**, `jcode` **29/30 (96.7%)** (v1: 73.3% vs 96.7%).
+- **Paired comparison on the 28 tasks both passed:** median per-task `pu/jcode` ratio **wall 0.838** (pu 16% faster), **cost 0.952** (pu 5% cheaper). `pu` was faster on 16/28 tasks, cheaper on 19/28, and both on 15/28.
+- **Unpaired medians (all runs):** wall `pu` 101.1s vs `jcode` 116.5s (13.2% faster); notional cost `pu` $0.007901 vs `jcode` $0.009217 (14.3% lower).
+- **False completions (agent said completed, acceptance red):** `pu` **1** (`19_toml_add_decoder_maxtablenest`, 30 turns), `jcode` **1** (`03_lipgloss_fix_color_expand_rgbcolo`). In v1, `pu` had 8.
+- **Per category (pass, false completions, median wall/cost on passes):**
+  - `bugfix` (10): `pu` 10/10, fc 0, 93.3s, $0.0073 | `jcode` 9/10, fc 1, 117.4s, $0.0087
+  - `feature_refactor` (10): `pu` 9/10, fc 1, 120.6s, $0.0094 | `jcode` 10/10, fc 0, 116.4s, $0.0090
+  - `test_build` (5): `pu` 5/5, 52.7s, $0.0062 | `jcode` 5/5, 104.6s, $0.0077
+  - `no_change` (3): `pu` 3/3, 186.5s, $0.0142 | `jcode` 3/3, 165.7s, $0.0132
+  - `large_file` (2): `pu` 2/2, 174.2s, $0.0104 | `jcode` 2/2, 118.9s, $0.0105
+- **Spec §12 verdict (30 paired, at least 25):** **NO-GO, narrowly.** `pu` matches `jcode` on success (96.7% each), but the spec's unpaired median gains are 13.2% (wall) and 14.3% (cost), both short of the 15% threshold. On the paired per-task ratio, `pu` is 16.2% faster, but §12 is defined on medians, so the verdict stays NO-GO.
+- **Caveats:** One run per tool per task, so a 1-2 point swing is within noise. `pu` gives up speed on `no_change` and `large_file` (more verification turns under the new evidence rule).
+
 ## Decisions
 
 - **OpenCode Go endpoint path & session header**: Chat-completions models (including pilot model `deepseek-v4.1-flash`) use `https://opencode.ai/inference/go/openai/v1`, `reasoning_content`, and require `x-opencode-session` (`provider.Request.SessionID`).
