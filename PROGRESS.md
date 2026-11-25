@@ -210,6 +210,21 @@ Written and committed before any repeat run. `pu` stays frozen at `94eca17`; the
 - **Rate-limited/setup-error runs** are excluded and retried via `--resume`; they don't count as one of the 3.
 - **Secondary (doesn't decide the verdict):** per tool, total wall time and total notional cost across all runs (failures included) divided by the number of passed runs.
 
+## Pilot v2 repeat results (3 runs x 30 tasks x 2 tools, valid)
+
+- **Data:** rep 1 = `eval/pilot_v2_results.jsonl`, reps 2-3 = `eval/pilot_v2_repeat_results.jsonl` (`rep` field, added to the harness only via `--rep`; `pu` binary rebuilt from `94eca17`). 180/180 valid runs, 0 rate-limited, 0 timeouts. Ran 23:11-00:26 Istanbul. Analysis: `eval/analyze_repeat.py`.
+- **Verdict under the pre-registered rule: NO-GO.** 2/3 success: `pu` **28/30 (93.3%)**, `jcode` **29/30 (96.7%)**. On the 27 tasks both passed, the median per-task `pu/jcode` ratio is **wall 0.847** (just inside the 0.85 bar) and **cost 0.931**. `pu` was faster on 19/27 and cheaper on 17/27. The speed bar is met, but the success condition fails by one task.
+- **Tasks that decided it:** `pu` lost `03_lipgloss` (PFF; `jcode` FPP) and `19_toml_maxtablenest` (FPF). `jcode` lost `14_lipgloss_table_height` (PFF).
+- **Run-to-run spread:**
+  - Per-rep pass counts: `pu` 29, 29, 26; `jcode` 29, 28, 29.
+  - Flaky tasks (1-2 of 3 passing): `pu` 4, `jcode` 3.
+  - Median per-task coefficient of variation of wall time on passing runs: `pu` 0.33, `jcode` 0.19, so `pu` is noisier.
+  - One run's pass or fail flips a single-rep verdict, so v2's single run said 29 vs 29.
+- **False completions (agent said completed, acceptance red):** `pu` **5/90 runs**, `jcode` **4/90 runs**. One more `pu` run (26 rep 3) ended `failed` (open steps after continuations) and isn't counted as a false completion.
+- **Per category (2/3 pass):** bugfix `pu` 9 / `jcode` 10; feature_refactor 9 / 9; test_build 5 / 5; no_change 3 / 3; large_file 2 / 2.
+- **Median turns (all runs):** `pu` 15, `jcode` 17.
+- **Secondary (all runs, failures included, divided by passed runs):** `pu` **115.3s, $0.01115** per pass; `jcode` **137.8s, $0.01231** per pass, so `pu` is 16% less time and 9% less cost per pass.
+
 ## Decisions
 
 - **OpenCode Go endpoint path & session header**: Chat-completions models (including pilot model `deepseek-v4.1-flash`) use `https://opencode.ai/inference/go/openai/v1`, `reasoning_content`, and require `x-opencode-session` (`provider.Request.SessionID`).
