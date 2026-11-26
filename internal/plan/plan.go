@@ -60,6 +60,21 @@ type Manager struct {
 
 func normCmd(c string) string { return strings.Join(strings.Fields(c), " ") }
 
+// CoveredWithoutPlan reports, for a run that edited non-test code without a
+// plan, whether some current passing evidence covers the change (red -> green
+// in-session or proven failed-before by the auto baseline). Used as an implicit
+// single-step gate so the evidence rule also applies when the model never plans.
+func (m *Manager) CoveredWithoutPlan() bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, ev := range m.state.Evidence {
+		if ev.Validity == "current" && ev.ExitCode == 0 && ev.Covers {
+			return true
+		}
+	}
+	return false
+}
+
 // MarkEdited records that the agent changed workspace files. Once set, done
 // steps need evidence that covers the changed behaviour.
 func (m *Manager) MarkEdited() {

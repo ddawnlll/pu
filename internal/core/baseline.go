@@ -61,10 +61,18 @@ func autoBaseline(ctx context.Context, cp *edit.Checkpointer, planMgr *plan.Mana
 // needsCoverage reports whether some plan step marked done still lacks
 // covering evidence, i.e. the baseline result could change completion.
 func needsCoverage(pm *plan.Manager) bool {
+	if !pm.HasPlan() {
+		return !pm.CoveredWithoutPlan()
+	}
 	for _, s := range pm.OpenSteps() {
 		if s.Status == "done" {
 			return true
 		}
 	}
 	return false
+}
+
+// changedNonTest reports whether pu modified any non-test file this session.
+func changedNonTest(cp *edit.Checkpointer) bool {
+	return len(cp.ChangedFiles()) > len(cp.ChangedTestFiles())
 }

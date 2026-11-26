@@ -357,6 +357,19 @@ func Run(ctx context.Context, cfg Config, streamer Streamer, userPrompt string) 
 				}
 				return finish(StatusFailed, finalText, "open plan steps remain without current evidence after continuations"), nil
 			}
+			// Implicit gate when the model never made a plan: non-test code changed
+			// but no passing check was shown to fail without the change.
+			if !planMgr.HasPlan() && changedNonTest(checkpointer) && !planMgr.CoveredWithoutPlan() && continuations < maxOpenStepContinuations {
+				continuations++
+				logEvent("uncovered_change_continuation", map[string]any{"turn": turns, "continuation": continuations})
+				history = append(history, provider.Item{
+					Role: provider.RoleUser,
+					Parts: []provider.ContentPart{provider.TextPart{Text: "No passing check yet covers your change: none of your green tests was shown to fail without it. " +
+						"Write a test (in a _test file) that asserts the behaviour the request describes, including the edge cases it names, and run it; " +
+						"pu reruns it against your pre-edit code automatically. Then finish."}},
+				})
+				continue
+			}
 			return finish(StatusCompleted, finalText, ""), nil
 		}
 

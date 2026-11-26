@@ -9,8 +9,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ddawnlll/pu/internal/catalog"
 	"github.com/ddawnlll/pu/internal/edit"
 	"github.com/ddawnlll/pu/internal/plan"
+	"github.com/ddawnlll/pu/internal/provider"
 )
 
 func gitRepo(t *testing.T) string {
@@ -89,5 +91,30 @@ func TestAutoBaselineSkipsWithoutChangedTests(t *testing.T) {
 	ev := pm.RecordEvidence("go test .", 0, 1, "", "", nil, "")
 	if note := autoBaseline(context.Background(), cp, pm, "go test .", time.Minute, ev); note != "" {
 		t.Fatalf("unexpected baseline: %q", note)
+	}
+}
+
+func TestImplicitGateNudgesWhenNoPlanAndUncoveredChange(t *testing.T) {
+	dir := gitRepo(t)
+	turn, nudges := 0, 0
+	fake := fakeStreamerFunc(func(ctx context.Context, req provider.Request, _ func(provider.StreamEvent)) (*provider.Response, error) {
+		turn++
+		last := req.Items[len(req.Items)-1]
+		if tp, ok := last.Parts[0].(provider.TextPart); ok && last.Role == provider.RoleUser && strings.Contains(tp.Text, "No passing check yet covers") {
+			nudges++
+		}
+		if turn == 1 {
+			return &provider.Response{FinishReason: "tool_calls", Item: provider.Item{Role: provider.RoleAssistant, Parts: []provider.ContentPart{
+				provider.ToolCallPart{ID: "p1", Name: "patch", Arguments: `{"mode":"full_rewrite","path":"add.go","content":"package b\nfunc Add(a, b int) int { return a + b }\n"}`},
+			}}}, nil
+		}
+		return &provider.Response{FinishReason: "stop", Item: provider.Item{Role: provider.RoleAssistant, Parts: []provider.ContentPart{provider.TextPart{Text: "done"}}}}, nil
+	})
+	rep, err := Run(context.Background(), Config{RepoRoot: dir, Model: catalog.Model{ID: "m"}}, fake, "fix Add")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if nudges != 2 || rep.Status != StatusCompleted {
+		t.Fatalf("nudges=%d status=%s, want 2 nudges then completed", nudges, rep.Status)
 	}
 }
