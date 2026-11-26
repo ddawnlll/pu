@@ -288,6 +288,27 @@ Committed before any v3 run. Same rule as "v2 repeat: pre-registered rule": set 
   - This filter is asymmetric because `jcode` couldn't be checked. From now on the harness scans both tools.
 - **Network blocking:** not done. `jcode` needs network for the LLM API, so a per-process network namespace would also need an API-only egress proxy. That's out of the 15-minute budget, so detection plus exclusion is the guard for now.
 
+## Phase 1: false-completion diagnosis (v3, dev set)
+
+Sources: `pu` session journals (`--sessions-dir`), each task's hidden acceptance test (`git show <fix> -- <test>`), and the fix commit's file list. All 12 `pu` false completions (FC) are **clean** runs (no leak).
+
+| Task (rep) | `pu` claimed evidence (last green checks) | What acceptance checks that `pu`'s evidence didn't | Fix touched, `pu` didn't |
+|---|---|---|---|
+| 02_afero_unionfile (1,2,3) | `go vet . && go test ./...` + own `TestUnionFileCloseReturnsNil` | `TestUnionFileClose`: full matrix of base/layer close errors, `BADFD` on empty, close **order** | none (same files) |
+| 11_afero_zipfs (1) | `go vet ./... && go test ./...` (existing tests only, no new test) | `TestZipFsNoDirEntry`: zip without directory entries, implicit dirs in Walk/Readdir | `zipfs/testdata/no_dir_entry.zip`, `zipfs_test.go` |
+| 13_cast_indirection (1) | ad-hoc `TestReproMatrix` (logs only, no assertions) + `git diff` | `TestIndirect`: `**string`, typed nil in `any`, `ok` flag per case; `basic_test`/`time_test` cases | `basic_test.go`, `time_test.go` |
+| 25_cli_root_completion (1,2,3) | own `TestRootCommandCompletion...` shown failing at HEAD and passing after (manual baseline), `go test ./...` | `TestCompletionUsesRunArguments`: **subcommand** completion via a custom `ShellComplete` that passes a parent-less `Command` (needs `cmd.Root().Writer` path) | none in rep 1-2; rep 3 also edited `command.go` |
+| 01_afero_regexpfs (2) | `go test ./ -run 'Regexp\|Filter'`, `go test ./...`; own test in `ro_regexp_test.go` | `TestRegexpFsOpenFile`: create/excl/existing/dir/unfiltered matrix on MemMapFs **and OsFs** | `regexpfs_test.go` (new file) |
+| 14_cli_completion_name (2,3) | ad-hoc demo test (prints output) / `go test -run TestCompletion .`, `go test ./...` | setup instructions must use the **renamed** command (`source <(foo junky bash)`, fish path), no `foo completion` | none (same files) |
+| 15_cli_flag_visit (3) | manual pre/post copy check of own `TestExtFlagVisitedAsSet`, gofmt | `TestExtFlagVisit`: `flag.Visit` reports only the ext flag actually set (plus int/uint flag tests) | `flag_int_test.go`, `flag_uint_test.go` |
+
+- **Causes (12 `pu` FC runs):**
+  - **A. Requirement under-covered (11/12):** `pu` changed the right files and its own checks were green, often including a test it showed failing before. But that test exercised a narrower case than the requirement (only the happy path, one backend, the root command instead of subcommands, or no assertions at all).
+  - **B. No behaviour test at all (1/12):** 11_zipfs, existing suite only.
+  - **Untested packages/importers: 0/12.** In every FC the fix's non-test files were in packages `pu` had already run `go test` on (usually `./...`). So "run tests of touched packages + importers before completing" **would not have caught any of them**.
+  - **The evidence gate never fired:** 0/12 FC runs (and 86/90 v3 runs overall) created a plan, and the M4/evidence rule only applies to plan steps. So `pu` completed with no covering evidence in all 12.
+- **`jcode` FC (6/90, transcripts not kept, so classified from the hidden test only):** 02_afero x3 (same matrix test `pu` misses; both tools fail all runs, so the requirement is likely under-specified by the prompt), 11_afero_zipfs x2 (same implicit-dir case), 04_cobra_one_required x1 (completion cases in `completions_test.go`). Same cause A. **Shared with `pu`: 02 and 11 (4 of `pu`'s 12).** `pu`-only FC: 13, 25 x3, 01, 14 x2, 15 = **8 runs on 5 tasks**, all cause A.
+
 ## Decisions
 
 - **OpenCode Go endpoint path & session header**: Chat-completions models (including pilot model `deepseek-v4.1-flash`) use `https://opencode.ai/inference/go/openai/v1`, `reasoning_content`, and require `x-opencode-session` (`provider.Request.SessionID`).
