@@ -309,6 +309,30 @@ Sources: `pu` session journals (`--sessions-dir`), each task's hidden acceptance
   - **The evidence gate never fired:** 0/12 FC runs (and 86/90 v3 runs overall) created a plan, and the M4/evidence rule only applies to plan steps. So `pu` completed with no covering evidence in all 12.
 - **`jcode` FC (6/90, transcripts not kept, so classified from the hidden test only):** 02_afero x3 (same matrix test `pu` misses; both tools fail all runs, so the requirement is likely under-specified by the prompt), 11_afero_zipfs x2 (same implicit-dir case), 04_cobra_one_required x1 (completion cases in `completions_test.go`). Same cause A. **Shared with `pu`: 02 and 11 (4 of `pu`'s 12).** `pu`-only FC: 13, 25 x3, 01, 14 x2, 15 = **8 runs on 5 tasks**, all cause A.
 
+## Phase 2: smallest fix attempt (not merged)
+
+- **Choice:** Phase 1 showed the suggested "run tests of touched packages + importers" would catch 0/12, because `pu` had already run `go test ./...` in every FC. The mechanical gap that *was* real: the evidence gate only applied to plan steps, and 0/12 FC runs made a plan. **Change (`p0/implicit-gate`, `13d7e8c`, not merged):** with no plan, if non-test code changed and no current passing check covers it (red -> green in-session, or proven failed-before by the auto baseline), `pu` refuses to complete and nudges up to 2 times to write and run a test for the described behaviour (`TestImplicitGateNudgesWhenNoPlanAndUncoveredChange`). The auto baseline also runs without a plan.
+- **Measurement (v3 dev set, 3 runs/task, `pu` only, isolated harness; baseline = v3 `pu` at `e672110`):**
+
+| | `e672110` (v3) | gate `13d7e8c` | `jcode` (v3) |
+|---|---|---|---|
+| False completions, all runs | 12/90 (13.3%) | **12/90 (13.3%)** | 6/90 |
+| False completions, clean runs | 12/63 (19.0%) | 10/55 (18.2%) | n/a |
+| Runs passed | 77/90 | 76/90 | 84/90 |
+| Tasks passed (2/3) | 27/30 | 26/30 | 28/30 |
+| Median turns, tasks passed before and after (26) | 16.5 | **20.0** | |
+| Median wall, same 26 tasks | 75s | **119s** | |
+| Median per-task wall ratio vs `jcode` | 0.70 | **0.853** | |
+
+  - The gate fired in 55 of 90 sessions, and 48 sessions got baseline-proven coverage. The model complied by writing a test that failed before its change and passed after, but **that test was still narrower than the hidden acceptance test**. 02 and 25 stayed FFF, 14 went from PFF to FFP, 01 from PFP to FPF.
+  - Contamination got worse too: 35/90 runs (mostly network: `go list -m`/`ls-remote` while writing tests).
+- **Decision at 05:52 (pre-registered bar: FC at least halved AND wall ratio <= 0.85): NOT MET.** FC didn't fall (12 -> 12), and the wall ratio went 0.70 -> 0.853. **Not merged; work left on branch `p0/implicit-gate`. `pu` stays at `e672110`. Phase 3 (v4) not run.**
+- **No second attempt:** the dominant cause is semantic. The agent's own test asserts a narrower requirement than the task (missing matrix cases, a second backend, subcommand vs root, renamed-command text), in files it already edits and tests. Every mechanical gate I could build in the time left (package/importer tests, per-hunk revert checks, more nudges) checks *that* a test covers the diff, not *whether it covers the requirement*. The data says that costs speed without lowering FC, so I stopped rather than force it.
+- **Open:**
+  - (1) Cause A probably needs a requirement-level step, e.g. extracting enumerated cases from the prompt/issue into an explicit checklist that each needs an assertion. That's model behaviour, not a harness gate.
+  - (2) Network blocking with an API-only egress proxy, so contamination stops eating samples (39% of runs this session).
+  - (3) Keep `jcode` transcripts (now scanned live) so both tools are filtered symmetrically.
+
 ## Decisions
 
 - **OpenCode Go endpoint path & session header**: Chat-completions models (including pilot model `deepseek-v4.1-flash`) use `https://opencode.ai/inference/go/openai/v1`, `reasoning_content`, and require `x-opencode-session` (`provider.Request.SessionID`).
