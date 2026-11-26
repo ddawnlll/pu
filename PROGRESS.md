@@ -271,6 +271,23 @@ Committed before any v3 run. Same rule as "v2 repeat: pre-registered rule": set 
 - **Secondary (all runs / passed runs):** `pu` **122.1s, $0.01317** per pass; `jcode` **142.0s, $0.01350** per pass (`pu` 14% less time, 2% less cost).
 - **Read:** `pu` is now clearly faster and cheaper on the work both tools finish. What blocks GO is reliability: twice `jcode`'s false-completion rate and 3x the flaky tasks. The next lever is completion correctness on multi-file/feature tasks, not fewer turns.
 
+## Phase 0: contamination scan (measurement hygiene)
+
+- **Scanner:** `eval/contamination.py` (offline, over saved session journals) and `eval/contamination.go` (built into `pu-eval`; every new result gets `contamination` + `contamination_evidence`; `report.go` and `analyze_repeat.py` exclude non-clean runs from all metrics and verdicts). Labels:
+  - `history_leak`: a tool output shows a commit that isn't an ancestor of the task's start commit (e.g. `git log --all` or `git show` of the fix).
+  - `network_leak`: the agent fetched upstream. Signals are `git ls-remote`-style `<sha> HEAD` lines for later commits, `Cloning into`, `From https://`, `go: downloading`, `get https://proxy.golang.org/...`, github `commit/pull/compare` URLs, raw/codeload URLs, or curl output. A `GOPROXY=` env value doesn't count.
+  - Test: `TestScanContamination`.
+- **Results (`eval/contamination.jsonl`):**
+  - **v3 `pu`:** 63/90 clean, 24 network_leak (mostly `git ls-remote`/`go list -m` against GitHub, PR pages), 3 history_leak.
+  - **v2 `pu`** (the 94eca17 rerun, shared-worktree harness): 11/30 clean, 15 history_leak, 4 network_leak.
+  - **jcode v1/v2/v3 and `pu` v1/v2 originals:** transcripts were deleted with their temp dirs (jcode's isolated home; `pu` worktrees before `--sessions-dir` existed), so they **can't be scanned**. **v1 and v2 results (both tools) are labelled contaminated/unverifiable.** v1/v2 used shared worktrees where `git log --all` showed the fix, and the v2 rerun shows `pu` reading it in half the sessions. Treat the "Pilot v1", "Pilot v2" and "v2 repeat" verdicts as **contaminated**.
+- **v3 recomputed on clean runs (`pu` filtered; `jcode` unscannable, so all its runs kept):**
+  - Tasks with 3 clean runs for both tools: **14/30**, so the verdict is **INCOMPLETE** by the pre-registered >=25 rule.
+  - On those 14: `pu` 11/14 vs `jcode` 13/14 (2/3 pass); wall ratio 0.54, cost ratio 0.53; false completions `pu` 9/42 runs, `jcode` 4/42.
+  - The `pu` false-completion rate on clean runs (9/42 = 21%) is **higher** than on all runs (12/90 = 13%). Contamination was helping `pu`, not hiding a reliability edge.
+  - This filter is asymmetric because `jcode` couldn't be checked. From now on the harness scans both tools.
+- **Network blocking:** not done. `jcode` needs network for the LLM API, so a per-process network namespace would also need an API-only egress proxy. That's out of the 15-minute budget, so detection plus exclusion is the guard for now.
+
 ## Decisions
 
 - **OpenCode Go endpoint path & session header**: Chat-completions models (including pilot model `deepseek-v4.1-flash`) use `https://opencode.ai/inference/go/openai/v1`, `reasoning_content`, and require `x-opencode-session` (`provider.Request.SessionID`).

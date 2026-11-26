@@ -8,6 +8,13 @@ import collections, json, statistics, sys
 
 runs = collections.defaultdict(list)  # (task, tool) -> [row]
 cat = {}
+CONTAM = {}  # (task, tool, rep) -> status, from optional 3rd arg contamination.jsonl
+if len(sys.argv) > 3:
+    for l in open(sys.argv[3]):
+        c = json.loads(l)
+        if c.get("set") == (sys.argv[4] if len(sys.argv) > 4 else c.get("set")):
+            CONTAM[(c["task_id"], c["tool"], c["rep"])] = c["status"]
+excluded = collections.Counter()
 for path, default_rep in ((sys.argv[1], 1), (sys.argv[2], None)):
     try:
         f = open(path)
@@ -19,18 +26,25 @@ for path, default_rep in ((sys.argv[1], 1), (sys.argv[2], None)):
         if r.get("rate_limited") or r.get("setup_error") or r.get("agent_status") in ("rate_limited", "setup_error"):
             continue
         rep = r.get("rep") or default_rep or 1
+        st = r.get("contamination") or CONTAM.get((r["task_id"], r["tool"], rep), "clean")
+        if st != "clean":
+            excluded[r["tool"]] += 1
+            continue
         latest[(r["task_id"], r["tool"], rep)] = r
     for (t, tool, rep), r in latest.items():
         runs[(t, tool)].append(r)
         cat[t] = r["category"]
 
 tasks = sorted(cat)
-full = [t for t in tasks if len(runs[(t, "pu")]) >= 3 and len(runs[(t, "jcode")]) >= 3]
-print(f"tasks with 3 valid runs per tool: {len(full)}/{len(tasks)}")
+print(f"contaminated runs excluded: {dict(excluded)}")
+MINRUNS = int(__import__('os').environ.get("MINRUNS", "3"))
+full = [t for t in tasks if len(runs[(t, "pu")]) >= MINRUNS and len(runs[(t, "jcode")]) >= MINRUNS]
+print(f"tasks with >={MINRUNS} clean runs per tool: {len(full)}/{len(tasks)}")
 
 
 def passed(t, tool):
-    return sum(r["passed"] for r in runs[(t, tool)][:3]) >= 2
+    rs = runs[(t, tool)][:3]
+    return sum(r["passed"] for r in rs) * 2 > len(rs) or (len(rs) == 3 and sum(r["passed"] for r in rs) >= 2)
 
 
 def med(t, tool, k):
