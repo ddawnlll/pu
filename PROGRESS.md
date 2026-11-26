@@ -245,6 +245,32 @@ Written and committed before any repeat run. `pu` stays frozen at `94eca17`; the
 
 Committed before any v3 run. Same rule as "v2 repeat: pre-registered rule": set `eval/pilot_v3_tasks` (`7885e46`), `pu` frozen at `e672110`, `jcode` as installed. 3 runs per task per tool (`--rep 1..3`) into `eval/pilot_v3_results.jsonl`, same settings as v2, isolated harness for both tools. Pass = at least 2 of 3. Per-task medians over passing runs. Paired = both passed. GO iff `pu` 2/3 success >= `jcode`'s AND (median per-task wall ratio <= 0.85 OR cost ratio <= 0.85). At least 25 tasks with 3 valid runs per tool, else INCOMPLETE. Secondary (doesn't decide the verdict): total wall/cost across all runs / passed runs.
 
+## Pilot v3 results (3 runs x 30 held-out tasks x 2 tools, valid)
+
+- **Data:** `eval/pilot_v3_results.jsonl` (180/180 valid runs, 0 rate-limited, 0 setup errors, 0 timeouts), isolated harness, `pu` `e672110`. Ran 02:05-04:08 Istanbul. Analysis: `eval/analyze_repeat.py`, `eval/turn_breakdown.py`.
+- **Verdict under the pre-registered rule: NO-GO.** 2/3 success: `pu` **27/30 (90.0%)**, `jcode` **28/30 (93.3%)**. Speed and cost clear the bar by a wide margin: on the 26 tasks both passed, the median per-task `pu/jcode` ratio is **wall 0.700** and **cost 0.779**. `pu` was faster on 22/26 and cheaper on 18/26. The verdict fails only on success rate (one task).
+- **Decisive tasks:**
+  - `pu` lost `14_cli_configured_c` (PFF) and `25_cli_complete_arguments` (FFF; `jcode` PPP). On 25, `pu` declared completion all 3 times after 28-38 turns and 173-429s.
+  - `jcode` lost `11_afero_zipfs` (FPF, `pu` FPP).
+  - Both lost `02_afero_unionfile` (FFF/FFF).
+- **Run-to-run spread:** per-rep pass `pu` 25, 26, 26; `jcode` 27, 29, 28. Flaky tasks: `pu` 6, `jcode` 2. Median per-task wall CV: `pu` 0.23, `jcode` 0.17.
+- **False completions (agent said completed, acceptance red):** `pu` **12/90 runs**, `jcode` **6/90 runs**. One more `pu` run ended without completing (17 rep 1).
+- **Per category (2/3 pass, `pu` / `jcode`):** bugfix 9/9, feature_refactor 9/9, test_build 4/5, no_change 3/3, large_file 2/2.
+- **Median turns:** `pu` **16**, `jcode` **19**.
+- **Turn breakdown vs v2:** v3 has 90 sessions and 1,606 turns, median 16/session (v2 control: 16.5). Per-session v2 -> v3:
+  - shell_read 4.93 -> 5.73
+  - read 2.53 -> 2.76
+  - edit 2.43 -> 2.68
+  - git_history 3.03 -> 2.02 (no future commits to read now)
+  - full_suite 1.43 -> 1.38
+  - test_before_edit 1.37 -> 0.97
+  - test_after_edit 1.00 -> 0.59
+  - final 1.03 -> 1.02
+  - continuation 0.07 -> 0.06
+  - Verification turns fell from 3.8 to 2.9 per session, as intended. Exploration (shell_read + read + git_history + search) is still about 11 turns/session and is the main cost.
+- **Secondary (all runs / passed runs):** `pu` **122.1s, $0.01317** per pass; `jcode` **142.0s, $0.01350** per pass (`pu` 14% less time, 2% less cost).
+- **Read:** `pu` is now clearly faster and cheaper on the work both tools finish. What blocks GO is reliability: twice `jcode`'s false-completion rate and 3x the flaky tasks. The next lever is completion correctness on multi-file/feature tasks, not fewer turns.
+
 ## Decisions
 
 - **OpenCode Go endpoint path & session header**: Chat-completions models (including pilot model `deepseek-v4.1-flash`) use `https://opencode.ai/inference/go/openai/v1`, `reasoning_content`, and require `x-opencode-session` (`provider.Request.SessionID`).
