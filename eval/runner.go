@@ -41,6 +41,8 @@ type Result struct {
 	Tool               string     `json:"tool"` // "pu" or "jcode"
 	OrderIndex         int        `json:"order_index"`
 	Rep                int        `json:"rep,omitempty"`
+	Contamination      string     `json:"contamination,omitempty"`
+	ContaminationWhy   string     `json:"contamination_evidence,omitempty"`
 	Model              string     `json:"model"`
 	ReasoningEffort    string     `json:"reasoning_effort,omitempty"`
 	ReasoningEnforced  bool       `json:"reasoning_enforced"`
@@ -77,6 +79,7 @@ type AgentOutcome struct {
 	ReasoningNote      string
 	Budget             BudgetSpec
 	Err                error
+	Transcript         string // agent tool/journal text for contamination scanning
 }
 
 // AgentRunner executes a tool on a prepared worktree directory.
@@ -357,6 +360,11 @@ func runOne(ctx context.Context, tool string, orderIdx int, task Task, cfg RunCo
 	// the agent reported (excluding rate_limited and setup_error).
 	accExit := -1
 	passed := false
+	transcript := outcome.Transcript
+	if tool == "pu" {
+		transcript = collectTranscript(filepath.Join(wtDir, ".pu", "sessions"))
+	}
+	contam, contamWhy := ScanContamination(transcript, laterCommitPrefixes(task.Repo, task.Commit))
 	if !rateLimited && agentStatus != "setup_error" {
 		fetchForAcceptance(task.Repo, wtDir)
 		accExit = runAcceptance(ctx, wtDir, task.Acceptance)
@@ -370,6 +378,8 @@ func runOne(ctx context.Context, tool string, orderIdx int, task Task, cfg RunCo
 		Tool:               tool,
 		OrderIndex:         orderIdx,
 		Rep:                cfg.Rep,
+		Contamination:      contam,
+		ContaminationWhy:   contamWhy,
 		Model:              cfg.Model,
 		ReasoningEffort:    cfg.ReasoningEffort,
 		ReasoningEnforced:  outcome.ReasoningEnforced,
@@ -657,6 +667,7 @@ func runJcode(ctx context.Context, worktreeDir string, task Task, cfg RunConfig)
 		out.Status = "rate_limited"
 	}
 
+	out.Transcript = collectTranscript(isoHome)
 	// Primary usage source: sum ALL turns from isolated JCODE_HOME session journals/logs
 	// because `jcode run --json` only emits the last turn's usage.
 	sessUsage := ParseJcodeSessionUsage(isoHome)

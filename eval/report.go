@@ -16,6 +16,7 @@ type ToolStats struct {
 	Passed                int
 	Timeouts              int
 	RateLimited           int
+	Contaminated          int // history/network leak runs excluded from metrics and verdict
 	SuccessRate           float64
 	MedianWallTimeMS      float64
 	MedianNotionalCostUSD float64
@@ -90,6 +91,10 @@ func Summarize(results []Result) ReportSummary {
 			}
 			if r.RateLimited || r.AgentStatus == "rate_limited" {
 				st.RateLimited++
+				continue
+			}
+			if r.Contamination != "" && r.Contamination != ContamClean {
+				st.Contaminated++
 				continue
 			}
 			st.Total++
@@ -176,6 +181,9 @@ func FormatReport(s ReportSummary) string {
 			st.MedianInputTokens, st.MedianCachedTokens, st.MedianOutputTokens)
 		if st.RateLimited > 0 {
 			fmt.Fprintf(&sb, "  [rate_limited: %d excluded, retryable]", st.RateLimited)
+		}
+		if st.Contaminated > 0 {
+			fmt.Fprintf(&sb, "  [contaminated: %d excluded]", st.Contaminated)
 		}
 		sb.WriteByte('\n')
 	}

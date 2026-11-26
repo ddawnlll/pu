@@ -1,0 +1,120 @@
+{"set": "v3", "task_id": "01_afero_fix_allow_regexpfs_openf", "tool": "pu", "rep": 1, "status": "clean", "evidence": ""}
+{"set": "v3", "task_id": "01_afero_fix_allow_regexpfs_openf", "tool": "pu", "rep": 2, "status": "clean", "evidence": ""}
+{"set": "v3", "task_id": "01_afero_fix_allow_regexpfs_openf", "tool": "pu", "rep": 3, "status": "clean", "evidence": ""}
+{"set": "v3", "task_id": "02_afero_return_nil_after_success", "tool": "pu", "rep": 1, "status": "clean", "evidence": ""}
+{"set": "v3", "task_id": "02_afero_return_nil_after_success", "tool": "pu", "rep": 2, "status": "clean", "evidence": ""}
+{"set": "v3", "task_id": "02_afero_return_nil_after_success", "tool": "pu", "rep": 3, "status": "clean", "evidence": ""}
+{"set": "v3", "task_id": "03_cli_fix_count_runes_not_byte", "tool": "pu", "rep": 1, "status": "clean", "evidence": ""}
+{"set": "v3", "task_id": "03_cli_fix_count_runes_not_byte", "tool": "pu", "rep": 2, "status": "clean", "evidence": ""}
+{"set": "v3", "task_id": "03_cli_fix_count_runes_not_byte", "tool": "pu", "rep": 3, "status": "clean", "evidence": ""}
+{"set": "v3", "task_id": "04_cobra_add_one_required_flag_gr", "tool": "pu", "rep": 1, "status": "clean", "evidence": ""}
+{"set": "v3", "task_id": "04_cobra_add_one_required_flag_gr", "tool": "pu", "rep": 2, "status": "clean", "evidence": ""}
+{"set": "v3", "task_id": "04_cobra_add_one_required_flag_gr", "tool": "pu", "rep": 3, "status": "clean", "evidence": ""}
+{"set": "v3", "task_id": "05_kong_fix_accept_typed_duratio", "tool": "pu", "rep": 1, "status": "clean", "evidence": ""}
+{"set": "v3", "task_id": "05_kong_fix_accept_typed_duratio", "tool": "pu", "rep": 2, "status": "clean", "evidence": ""}
+{"set": "v3", "task_id": "05_kong_fix_accept_typed_duratio", "tool": "pu", "rep": 3, "status": "clean", "evidence": ""}
+{"set": "v3", "task_id": "06_lipgloss_inline_replace_newlines", "tool": "pu", "rep": 1, "status": "clean", "evidence": ""}
+{"set": "v3", "task_id": "06_lipgloss_inline_replace_newlines", "tool": "pu", "rep": 2, "status": "clean", "evidence": ""}
+{"set": "v3", "task_id": "06_lipgloss_inline_replace_newlines", "tool": "pu", "rep": 3, "status": "clean", "evidence": ""}
+{"set": "v3", "task_id": "07_mapstructure_feat_add_decode_hook_for", "tool": "pu", "rep": 1, "status": "clean", "evidence": ""}
+{"set": "v3", "task_id": "07_mapstructure_feat_add_decode_hook_for", "tool": "pu", "rep": 2, "status": "clean", "evidence": ""}
+{"set": "v3", "task_id": "07_mapstructure_feat_add_decode_hook_for", "tool": "pu", "rep": 3, "status": "clean", "evidence": ""}
+{"set": "v3", "task_id": "08_pflag_fix_initialize_default_u", "tool": "pu", "rep": 1, "status": "network_leak", "evidence": "get https://proxy.golang.org/"}
+{"set": "v3", "task_id": "08_pflag_fix_initialize_default_u", "tool": "pu", "rep": 2, "status": "clean", "evidence": ""}
+{"set": "v3", "task_id": "08_pflag_fix_initialize_default_u", "tool": "pu", "rep": 3, "status": "clean", "evidence": ""}
+{"set": "v3", "task_id": "09_sjson_limit_array_padding_and", "tool": "pu", "rep": 1, "status": "network_leak", "evidence": "github.com/tidwall/gjson/commit/"}
+{"set": "v3", "task_id": "09_sjson_limit_array_padding_and", "tool": "pu", "rep": 2, "status": "clean", "evidence": ""}
+{"set": "v3", "task_id": "09_sjson_limit_array_padding_and", "tool": "pu", "rep": 3, "status": "network_leak", "evidence": "github.com/tidwall/gjson/commit/"}
+{"set": "v3", "task_id": "10_toml_mark_meta_keys_as_decode", "tool": "pu", "rep": 1, "status": "network_leak", "evidence": "Cloning into"}
+{"set": "v3", "task_id": "10_toml_mark_meta_keys_as_decode", "tool": "pu", "rep": 2, "status": "clean", "evidence": ""}
+{"set": "v3", "task_id": "10_toml_mark_meta_keys_as_decode", "tool": "pu", "rep": 3, "status": "clean", "evidence": ""}
+{"set": "v3", "task_id": "11_afero_zipfs_support_zip_files", "tool": "pu", "rep": 1, "status": "clean", "evidence": ""}
+{"set": "v3", "task_id": "11_afero_zipfs_support_zip_files", "tool": "pu", "rep": 2, "status": "history_leak", "evidence": "d4f7abb6:     \"sha\": \"d4f7abb6ceb0680b31835c4616989c34e4b7b7f9\","}
+{"set": "v3", "task_id": "11_afero_zipfs_support_zip_files", "tool": "pu", "rep": 3, "status": "clean", "evidence": ""}
+{"set": "v3", "task_id": "12_cast_fix_float_string_to_numb", "tool": "pu", "rep": 1, "status": "network_leak", "evidence": "d8e892d1: d8e892d16caba3fc13f781dcf4b3f4dd8976999c\tHEAD"}
+{"set": "v3", "task_id": "12_cast_fix_float_string_to_numb", "tool": "pu", "rep": 2, "status": "network_leak", "evidence": "d8e892d1: d8e892d16caba3fc13f781dcf4b3f4dd8976999c\tHEAD"}
+{"set": "v3", "task_id": "12_cast_fix_float_string_to_numb", "tool": "pu", "rep": 3, "status": "network_leak", "evidence": "github.com/spf13/cast/pull/"}
+{"set": "v3", "task_id": "13_cast_fix_indirection_of_typed", "tool": "pu", "rep": 1, "status": "clean", "evidence": ""}
+{"set": "v3", "task_id": "13_cast_fix_indirection_of_typed", "tool": "pu", "rep": 2, "status": "network_leak", "evidence": "d8e892d1: d8e892d16caba3fc13f781dcf4b3f4dd8976999c\tHEAD"}
+{"set": "v3", "task_id": "13_cast_fix_indirection_of_typed", "tool": "pu", "rep": 3, "status": "clean", "evidence": ""}
+{"set": "v3", "task_id": "14_cli_fix_use_the_configured_c", "tool": "pu", "rep": 1, "status": "clean", "evidence": ""}
+{"set": "v3", "task_id": "14_cli_fix_use_the_configured_c", "tool": "pu", "rep": 2, "status": "clean", "evidence": ""}
+{"set": "v3", "task_id": "14_cli_fix_use_the_configured_c", "tool": "pu", "rep": 3, "status": "clean", "evidence": ""}
+{"set": "v3", "task_id": "15_cli_fix_record_go_flags_set", "tool": "pu", "rep": 1, "status": "network_leak", "evidence": "github.com/urfave/cli/pull/"}
+{"set": "v3", "task_id": "15_cli_fix_record_go_flags_set", "tool": "pu", "rep": 2, "status": "network_leak", "evidence": "d5c06cb0: d5c06cb04479eeacbbb9378ea26261b6be516320\tHEAD"}
+{"set": "v3", "task_id": "15_cli_fix_record_go_flags_set", "tool": "pu", "rep": 3, "status": "clean", "evidence": ""}
+{"set": "v3", "task_id": "16_kong_add_last_wins_flag_group", "tool": "pu", "rep": 1, "status": "history_leak", "evidence": "a60008c: a60008c Add last-wins flag groups (#653)"}
+{"set": "v3", "task_id": "16_kong_add_last_wins_flag_group", "tool": "pu", "rep": 2, "status": "network_leak", "evidence": "HTTP/2 200"}
+{"set": "v3", "task_id": "16_kong_add_last_wins_flag_group", "tool": "pu", "rep": 3, "status": "network_leak", "evidence": "70cc1704: 70cc170466b9985ead8fae6ad2fc6f9ffbc7e33e\tHEAD"}
+{"set": "v3", "task_id": "17_kong_feat_support_negatable_b", "tool": "pu", "rep": 1, "status": "clean", "evidence": ""}
+{"set": "v3", "task_id": "17_kong_feat_support_negatable_b", "tool": "pu", "rep": 2, "status": "network_leak", "evidence": "70cc1704: 70cc170466b9985ead8fae6ad2fc6f9ffbc7e33e\tHEAD"}
+{"set": "v3", "task_id": "17_kong_feat_support_negatable_b", "tool": "pu", "rep": 3, "status": "network_leak", "evidence": "70cc1704: 70cc170466b9985ead8fae6ad2fc6f9ffbc7e33e\tHEAD"}
+{"set": "v3", "task_id": "18_lipgloss_fix_rename_underline_con", "tool": "pu", "rep": 1, "status": "clean", "evidence": ""}
+{"set": "v3", "task_id": "18_lipgloss_fix_rename_underline_con", "tool": "pu", "rep": 2, "status": "clean", "evidence": ""}
+{"set": "v3", "task_id": "18_lipgloss_fix_rename_underline_con", "tool": "pu", "rep": 3, "status": "network_leak", "evidence": "e7aa6f77: e7aa6f77e5be56519df0110152659292c9a0596e\trefs/heads/v2-block"}
+{"set": "v3", "task_id": "19_lipgloss_feat_blendlinear_blend", "tool": "pu", "rep": 1, "status": "clean", "evidence": ""}
+{"set": "v3", "task_id": "19_lipgloss_feat_blendlinear_blend", "tool": "pu", "rep": 2, "status": "clean", "evidence": ""}
+{"set": "v3", "task_id": "19_lipgloss_feat_blendlinear_blend", "tool": "pu", "rep": 3, "status": "clean", "evidence": ""}
+{"set": "v3", "task_id": "20_toml_add_position_col_410", "tool": "pu", "rep": 1, "status": "clean", "evidence": ""}
+{"set": "v3", "task_id": "20_toml_add_position_col_410", "tool": "pu", "rep": 2, "status": "history_leak", "evidence": "d733fc5: d733fc5 CONTRIBUTING.md with AI policy"}
+{"set": "v3", "task_id": "20_toml_add_position_col_410", "tool": "pu", "rep": 3, "status": "clean", "evidence": ""}
+{"set": "v3", "task_id": "21_afero_memmap_add_basic_read_wr", "tool": "pu", "rep": 1, "status": "network_leak", "evidence": "d2bffea7: d2bffea700c045694727c3172ad6521da4e218b0\tHEAD"}
+{"set": "v3", "task_id": "21_afero_memmap_add_basic_read_wr", "tool": "pu", "rep": 2, "status": "network_leak", "evidence": "get https://proxy.golang.org/"}
+{"set": "v3", "task_id": "21_afero_memmap_add_basic_read_wr", "tool": "pu", "rep": 3, "status": "clean", "evidence": ""}
+{"set": "v3", "task_id": "22_cast_refactor_improve_slice_t", "tool": "pu", "rep": 1, "status": "network_leak", "evidence": "d8e892d1: d8e892d16caba3fc13f781dcf4b3f4dd8976999c\tHEAD"}
+{"set": "v3", "task_id": "22_cast_refactor_improve_slice_t", "tool": "pu", "rep": 2, "status": "clean", "evidence": ""}
+{"set": "v3", "task_id": "22_cast_refactor_improve_slice_t", "tool": "pu", "rep": 3, "status": "clean", "evidence": ""}
+{"set": "v3", "task_id": "23_cast_refactor_improve_time_te", "tool": "pu", "rep": 1, "status": "network_leak", "evidence": "d8e892d1: d8e892d16caba3fc13f781dcf4b3f4dd8976999c\tHEAD"}
+{"set": "v3", "task_id": "23_cast_refactor_improve_time_te", "tool": "pu", "rep": 2, "status": "network_leak", "evidence": "d8e892d1: d8e892d16caba3fc13f781dcf4b3f4dd8976999c\tHEAD"}
+{"set": "v3", "task_id": "23_cast_refactor_improve_time_te", "tool": "pu", "rep": 3, "status": "network_leak", "evidence": "d8e892d1: d8e892d16caba3fc13f781dcf4b3f4dd8976999c\tHEAD"}
+{"set": "v3", "task_id": "24_cast_test_add_pointer_tests_t", "tool": "pu", "rep": 1, "status": "network_leak", "evidence": "d8e892d1: d8e892d16caba3fc13f781dcf4b3f4dd8976999c\tHEAD"}
+{"set": "v3", "task_id": "24_cast_test_add_pointer_tests_t", "tool": "pu", "rep": 2, "status": "clean", "evidence": ""}
+{"set": "v3", "task_id": "24_cast_test_add_pointer_tests_t", "tool": "pu", "rep": 3, "status": "network_leak", "evidence": "d8e892d1: d8e892d16caba3fc13f781dcf4b3f4dd8976999c\tHEAD"}
+{"set": "v3", "task_id": "25_cli_fix_complete_the_argumen", "tool": "pu", "rep": 1, "status": "clean", "evidence": ""}
+{"set": "v3", "task_id": "25_cli_fix_complete_the_argumen", "tool": "pu", "rep": 2, "status": "clean", "evidence": ""}
+{"set": "v3", "task_id": "25_cli_fix_complete_the_argumen", "tool": "pu", "rep": 3, "status": "clean", "evidence": ""}
+{"set": "v3", "task_id": "26_afero_no_change", "tool": "pu", "rep": 1, "status": "clean", "evidence": ""}
+{"set": "v3", "task_id": "26_afero_no_change", "tool": "pu", "rep": 2, "status": "clean", "evidence": ""}
+{"set": "v3", "task_id": "26_afero_no_change", "tool": "pu", "rep": 3, "status": "clean", "evidence": ""}
+{"set": "v3", "task_id": "27_cli_no_change", "tool": "pu", "rep": 1, "status": "clean", "evidence": ""}
+{"set": "v3", "task_id": "27_cli_no_change", "tool": "pu", "rep": 2, "status": "network_leak", "evidence": "github.com/urfave/cli/pull/"}
+{"set": "v3", "task_id": "27_cli_no_change", "tool": "pu", "rep": 3, "status": "clean", "evidence": ""}
+{"set": "v3", "task_id": "28_kong_no_change", "tool": "pu", "rep": 1, "status": "clean", "evidence": ""}
+{"set": "v3", "task_id": "28_kong_no_change", "tool": "pu", "rep": 2, "status": "clean", "evidence": ""}
+{"set": "v3", "task_id": "28_kong_no_change", "tool": "pu", "rep": 3, "status": "clean", "evidence": ""}
+{"set": "v3", "task_id": "29_cast_add_unsigned_integer_sup", "tool": "pu", "rep": 1, "status": "clean", "evidence": ""}
+{"set": "v3", "task_id": "29_cast_add_unsigned_integer_sup", "tool": "pu", "rep": 2, "status": "clean", "evidence": ""}
+{"set": "v3", "task_id": "29_cast_add_unsigned_integer_sup", "tool": "pu", "rep": 3, "status": "clean", "evidence": ""}
+{"set": "v3", "task_id": "30_cobra_fix_help_text_for_runnab", "tool": "pu", "rep": 1, "status": "clean", "evidence": ""}
+{"set": "v3", "task_id": "30_cobra_fix_help_text_for_runnab", "tool": "pu", "rep": 2, "status": "clean", "evidence": ""}
+{"set": "v3", "task_id": "30_cobra_fix_help_text_for_runnab", "tool": "pu", "rep": 3, "status": "clean", "evidence": ""}
+{"set": "v2_pu_rerun_94eca17", "task_id": "01_cobra_completion_improve_detec", "tool": "pu", "rep": 1, "status": "history_leak", "evidence": "adbc881: adbc881 fix: resolve macOS test link failure and update lint rules (#2429)"}
+{"set": "v2_pu_rerun_94eca17", "task_id": "02_cobra_don_t_complete_help_flag", "tool": "pu", "rep": 1, "status": "history_leak", "evidence": "b711e87: b711e87 Don't complete --help flag when flag parsing disabled (#2061)"}
+{"set": "v2_pu_rerun_94eca17", "task_id": "03_lipgloss_fix_color_expand_rgbcolo", "tool": "pu", "rep": 1, "status": "history_leak", "evidence": "e3f0511: e3f0511 fix(color): expand RGBColor channels to 16 bits (#757)"}
+{"set": "v2_pu_rerun_94eca17", "task_id": "04_lipgloss_fix_don_t_mangle_embedde", "tool": "pu", "rep": 1, "status": "network_leak", "evidence": "7d3aa334: 7d3aa334582ba8279f41223c7c36ba2a88d91327\tHEAD"}
+{"set": "v2_pu_rerun_94eca17", "task_id": "05_mapstructure_fix_nil_value_in_decode", "tool": "pu", "rep": 1, "status": "history_leak", "evidence": "52aa5c6d: /tmp/upsrc/mapstructure-52aa5c6dc1d27226460807054ca2107b2d54fb2d"}
+{"set": "v2_pu_rerun_94eca17", "task_id": "06_mapstructure_feat_add_back_previous_s", "tool": "pu", "rep": 1, "status": "history_leak", "evidence": "292f0c8: 292f0c8 fix: prevent time zone errors from leaking the decoded value"}
+{"set": "v2_pu_rerun_94eca17", "task_id": "07_pflag_implement_slicevalue_for", "tool": "pu", "rep": 1, "status": "clean", "evidence": ""}
+{"set": "v2_pu_rerun_94eca17", "task_id": "08_serde_json_parse_uxxxx_escapes_fast", "tool": "pu", "rep": 1, "status": "clean", "evidence": ""}
+{"set": "v2_pu_rerun_94eca17", "task_id": "09_sjson_fix_deleting_keys_starti", "tool": "pu", "rep": 1, "status": "clean", "evidence": ""}
+{"set": "v2_pu_rerun_94eca17", "task_id": "10_toml_correct_encoding_of_comm", "tool": "pu", "rep": 1, "status": "clean", "evidence": ""}
+{"set": "v2_pu_rerun_94eca17", "task_id": "11_cobra_add_env_variable_to_supp", "tool": "pu", "rep": 1, "status": "clean", "evidence": ""}
+{"set": "v2_pu_rerun_94eca17", "task_id": "12_cobra_update_shell_completion", "tool": "pu", "rep": 1, "status": "history_leak", "evidence": "adbc881: adbc881 fix: resolve macOS test link failure and update lint rules (#2429)"}
+{"set": "v2_pu_rerun_94eca17", "task_id": "13_lipgloss_feat_add_fitcontent_prop", "tool": "pu", "rep": 1, "status": "history_leak", "evidence": "6a419c6: 6a419c6 feat: add `FitContent` property to table renderer (#697)"}
+{"set": "v2_pu_rerun_94eca17", "task_id": "14_lipgloss_fix_table_height_and_ove", "tool": "pu", "rep": 1, "status": "history_leak", "evidence": "7b7579c: 7b7579c ci: sync golangci-lint config"}
+{"set": "v2_pu_rerun_94eca17", "task_id": "15_lipgloss_feat_add_hyperlink_suppo", "tool": "pu", "rep": 1, "status": "history_leak", "evidence": "7d3aa33: 7d3aa33 fix(table): render headers when table data is nil (#786)"}
+{"set": "v2_pu_rerun_94eca17", "task_id": "16_mapstructure_refactor_update", "tool": "pu", "rep": 1, "status": "history_leak", "evidence": "292f0c8: 292f0c8 fix: prevent time zone errors from leaking the decoded value"}
+{"set": "v2_pu_rerun_94eca17", "task_id": "17_pflag_fix_honor_custom_isboolf", "tool": "pu", "rep": 1, "status": "history_leak", "evidence": "7b3c6eb: 7b3c6eb Merge pull request #553 from Rajatendu1/ci/api-compatibility"}
+{"set": "v2_pu_rerun_94eca17", "task_id": "18_pflag_fix_map_ensure_string_to", "tool": "pu", "rep": 1, "status": "history_leak", "evidence": "7b3c6eb: 7b3c6eb Merge pull request #553 from Rajatendu1/ci/api-compatibility"}
+{"set": "v2_pu_rerun_94eca17", "task_id": "19_toml_add_decoder_maxtablenest", "tool": "pu", "rep": 1, "status": "history_leak", "evidence": "d733fc5: d733fc5 CONTRIBUTING.md with AI policy"}
+{"set": "v2_pu_rerun_94eca17", "task_id": "20_toml_enable_toml_1_1_by_defau", "tool": "pu", "rep": 1, "status": "history_leak", "evidence": "d733fc5: d733fc5 CONTRIBUTING.md with AI policy"}
+{"set": "v2_pu_rerun_94eca17", "task_id": "21_cobra_improve_api_to_get_flag", "tool": "pu", "rep": 1, "status": "network_leak", "evidence": "github.com/spf13/cobra/pull/"}
+{"set": "v2_pu_rerun_94eca17", "task_id": "22_lipgloss_fix_table_add_tests_fix", "tool": "pu", "rep": 1, "status": "clean", "evidence": ""}
+{"set": "v2_pu_rerun_94eca17", "task_id": "23_pflag_fix_report_the_flag_name", "tool": "pu", "rep": 1, "status": "network_leak", "evidence": "7b3c6eb4: 7b3c6eb4194a1d06e9e0eec9c24860a9c0045ad2\tHEAD"}
+{"set": "v2_pu_rerun_94eca17", "task_id": "24_pflag_fix_honour_deprecated_pa", "tool": "pu", "rep": 1, "status": "clean", "evidence": ""}
+{"set": "v2_pu_rerun_94eca17", "task_id": "25_toml_add_some_boring_tests_fo", "tool": "pu", "rep": 1, "status": "clean", "evidence": ""}
+{"set": "v2_pu_rerun_94eca17", "task_id": "26_mapstructure_no_change", "tool": "pu", "rep": 1, "status": "clean", "evidence": ""}
+{"set": "v2_pu_rerun_94eca17", "task_id": "27_pflag_no_change", "tool": "pu", "rep": 1, "status": "clean", "evidence": ""}
+{"set": "v2_pu_rerun_94eca17", "task_id": "28_sjson_no_change", "tool": "pu", "rep": 1, "status": "clean", "evidence": ""}
+{"set": "v2_pu_rerun_94eca17", "task_id": "29_cobra_allow_linker_to_perform", "tool": "pu", "rep": 1, "status": "network_leak", "evidence": "github.com/spf13/cobra/pull/"}
+{"set": "v2_pu_rerun_94eca17", "task_id": "30_gjson_ensure_floating_points_a", "tool": "pu", "rep": 1, "status": "history_leak", "evidence": "c6b726d: c6b726d fix uint overflow"}

@@ -43,3 +43,22 @@ func TestIsolatedCheckoutHidesFutureCommitsAndAcceptanceSeesThem(t *testing.T) {
 		t.Fatalf("acceptance can't reach fix: %v", err)
 	}
 }
+
+func TestScanContamination(t *testing.T) {
+	later := map[string]bool{"abcdef1": true}
+	if s, _ := ScanContamination("ok  \tpkg\t0.1s", later); s != ContamClean {
+		t.Fatal(s)
+	}
+	if s, _ := ScanContamination("abcdef1 fix the bug\n", later); s != ContamHistory {
+		t.Fatal(s)
+	}
+	if s, _ := ScanContamination("abcdef1234\tHEAD\n", later); s != ContamNetwork {
+		t.Fatal(s)
+	}
+	if s, _ := ScanContamination("Cloning into 'x'...", later); s != ContamNetwork {
+		t.Fatal(s)
+	}
+	if s, _ := ScanContamination("GOPROXY=https://proxy.golang.org,direct", later); s != ContamClean {
+		t.Fatal("GOPROXY env value is not a fetch:", s)
+	}
+}
